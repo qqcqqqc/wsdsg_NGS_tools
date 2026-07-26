@@ -1,38 +1,50 @@
-# 🧬 NGS & CRISPR 扩增子测序分析工具 v10.25
+# 🤪 宇宙无敌 NGS Tool-CQL 定制版 🚀
 
 <p align="center">
-  <img src="assets/crazy_dave.png"  width="280"/>
+  <img src="assets/crazy_dave.png" alt="疯狂戴夫" width="280"/>
 </p>
 
 <p align="center">
-  <i>宇宙最帅cql的NGS小工具！</i>
+  <i>“脑子……歪？数据……歪？不要慌！戴夫顶着锅盖、拿着铲子来帮你撕裂 FASTQ 啦！”</i>
 </p>
 
 ---
 
-## 🤪 这是个啥小工具？
+## 🤪 这究竟是个啥奇葩小工具？
 
-这是一个运行在桌面的 **NGS 扩增子测序数据拆分与 CRISPR 基因编辑效率分析工具**。
+这是一个运行在桌面的 **NGS 扩增子测序数据拆分与 CRISPR 基因编辑效率分析神器**！
 
-专门用来解决湿实验和生信分析之间各种奇奇怪怪的小烦恼：比如 `cutadapt` 命令行记不住、`CRISPResso2` 批量分析频繁报错、引物发生了 5' 端降解截断、或者表头字段经常填错等等。
+专门用来拯救被生信分析折磨得掉头发的湿实验同学：
+* 命令行太长记不住？`cutadapt` 参数填错直接崩掉？
+* `CRISPResso2` 批量跑分析天天报各种奇奇怪怪的错？
+* 测序引物发生不可抗力 5' 端降解截断？
+* 傻傻分不清反向互补链导致 `sgRNA not present in amplicon`？
 
----
-
-## 🛠️ 很好用的特性
-
-- **双端 UDI 强力拆分**：基于 `cutadapt` 多线程加速。
-- **编辑效率自动汇总**：支持 NHEJ、Base Editing (BE)、HDR 和 Prime Editing (PE)。分析完成后自动导出精美的 Excel 汇总大表。
-- **链方向自动纠正 (Reverse Complement)**：如果你不小心把扩增子填成了反向互补链，后台会自动识别并翻转序列，防止报错 `sgRNA not present in amplicon`。
-- **秒级进程终结**：遇到跑错参数的情况，点击“停止”按钮，0.5 秒内自动扫荡并清理所有后台子进程，CPU 和内存占用瞬间归零。
+**不用怕！把数据丢进来，点击按钮，剩下的全部交给戴夫！** 🌻
 
 ---
 
-## 📊 表格列名匹配机制与示例格式
+## ⚠️ 戴夫的避坑生存法则（血泪提醒！）
 
-软件对输入的 Excel 表格采用了 **智能列名识别** 机制：
+> 🚨 **填写 Excel 表格时，请死死记住以下两条保命法则**：
+>
+> 1. **样品名绝对不能是“纯数字”**！比如千万别填 `123` 或 `2026`（Excel 会把它当成数值类型，导致生信脚本识别崩溃！请写成 `Sample_123` 或 `S123`）。
+> 2. **样品名绝对不能包含中文破折号 `—` 或全角符号**！横线请一律使用英文半角的 `-` 或下划线 `_`（中文破折号会导致 `cutadapt` 和 `CRISPResso2` 在 Linux 下原地发疯）。
 
-> 💡 **匹配逻辑说明**：
-> 只要表头包含对应关键字（如“样品”、“描述”、“库”、“索引1”、“sg”、“原始序列”等），**列的左右排列顺序可以任意排列**，系统都能自动精准定位抓取数据！
+---
+
+## 🛠️ 戴夫的黑科技特性
+
+- **双端 UDI 强力拆分**：多线程极速并发！支持文库名任意前缀模糊匹配（比如填 `BEV1` 就能自动抓取 `BEV1-LJG7071_R1.fastq.gz`）。哪怕引物被降解掉了几个碱基，也能顺藤摸瓜拆出来！
+- **基因编辑效率自动汇总大表**：同时搞定 NHEJ 敲除、Base Editing (BE 碱基编辑)、HDR 同源重组和 Prime Editing (PE 引导编辑)。跑完自动双手奉上精美 Excel 汇总大表！
+- **链方向自动翻转 (RC Auto-Correction)**：如果你不小心把 Amplicon 扩增子填成了反向互补链，戴夫会自动帮你在后台把序列翻转过来，彻底告别报错！
+- **0.5 秒暴力终结进程**：参数填错了想紧急刹车？点击“停止”按钮，0.5 秒内瞬间强杀 WSL 内部所有后台子进程，CPU 和内存占用瞬间归零！
+
+---
+
+## 📊 表格智能识别与示例格式
+
+软件支持 **智能列名关键字识别**！表头列的左右排列顺序 **随意乱摆** 都行，只要包含对应关键字即可自动抓取！
 
 ---
 
@@ -45,66 +57,36 @@
 | Sample1 | Control_Rep1 | BEV1-LJG7071 | GAGTAC | ACTGAC |
 | Sample2 | ABE_Treat | BEV1-LJG7071 | GAGTAC | TGACAT |
 
-* **说明**：`所在样品库` 填写文库名称或其前缀关键字（如 `BEV1`、`BEV1-LJG7071` 均可智能匹配）；`索引序列1` 和 `索引序列2` 填写双端 Index / Barcode 序列。
+* **戴夫提示**：`所在样品库` 填写文库名称或其前缀（如 `BEV1` 即可匹配）；`索引序列1` 和 `索引序列2` 填写 Index 序列。
 
 ---
 
-### 2. 🧬 CRISPResso2 基因编辑效率分析表格示例
+### 2. 🧬 CRISPResso2 基因编辑分析表格示例
 
 适用于 **`🧬 CRISPResso2 基因编辑效率分析`** 功能：
 
-#### 碱基编辑模式 (BE Mode):
+#### 碱基编辑模式 (BE 模式):
 | 样品名 | 描述 | sg | 原始序列 | 原始碱基 | 修改后碱基 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Sample_ABE | ABE-Target1 | GGAAGCTCCAAAGAGTGGCA | GGAAGCTCCAAAGAGTGGCAACGTAG... | A | G |
 | Sample_CBE | CBE-Target2 | TAACGTCCCAAACGCGCCAA | GAAATGAAACTTGGGGCGAGGACCAC... | C | T |
 
-#### 双断裂敲除模式 (NHEJ Mode):
+#### 敲除模式 (NHEJ 模式):
 | 样品名 | 描述 | sg | 原始序列 |
 | :--- | :--- | :--- | :--- |
 | Sample_CUT1 | CUT-Knockout | TAACGTCCCAAACGCGCCAA | GAAATGAAACTTGGGGCGAGGACCAC... |
 
-* **说明**：
-  * `sg`：填写 20 nt 左右的 guide 序列。
-  * `原始序列`：填写包含 sgRNA 的完整 Amplicon 扩增子序列（就算填了反向互补链，后台也会自动修正）。
-  * `原始碱基`与`修改后碱基`：BE 模式下用于指定编辑类型（如 A ➔ G 或 C ➔ T）。
-
 ---
 
-## 🛠️ 安装与启动
+## 🚀 极速启动指南
 
-### 1. 环境准备
-* **Windows**：需安装 WSL2 (Ubuntu/Debian)。
-* **macOS / Linux**：直接原生运行。
-* 生信环境需包含 `cutadapt` 与 `CRISPResso2`（已安装在 conda 环境中）。
+### 🪟 Windows 用户：
+1. 下载代码解压后，**直接双击 `创建桌面快捷方式.bat`**！
+2. 桌面上会瞬间生成一个带有**疯狂戴夫头像**的 `宇宙无敌NGS tool-cql定制版` 快捷方式！
+3. 以后直接双击桌面上的戴夫图标即可秒拉起软件！
 
-### 2. 启动软件
-```bash
-# 1. 克隆代码
-git clone https://github.com/qqcqqqc/wsdsg_NGS_tools.git
-cd wsdsg_NGS_tools
-
-# 2. 安装界面依赖
-pip install -r requirements.txt
-
-# 3. 启动 GUI 界面
-python app.py
-```
-
----
-
-## 📁 目录结构
-
-```text
-wsdsg_NGS_tools/
-├── app.py                   # 软件启动入口
-├── requirements.txt         # Python 依赖清单
-├── README.md                # 软件说明文档
-├── assets/                  # 搞怪图标资源
-├── examples/                # 示例 Excel 表格文件
-├── core/                    # 后台逻辑引擎 (Demux/CRISPResso/CQL/WSL通信)
-└── gui/                     # 界面 UI 组件 (主窗口/拆分Tab/分析Tab/弹窗)
-```
+### 🍎 macOS / 🐧 Linux 用户：
+* 直接双击或在终端运行 `./启动软件.sh` 即可一键拉起！
 
 ---
 
@@ -112,4 +94,4 @@ wsdsg_NGS_tools/
 
 - 本项目在 **MIT License** 协议下开源。
 - 感谢原作者 [M.Q. @ ShanghaiTech University] 的初始探索与贡献。
-- 感谢 `CRISPResso2` 与 `cutadapt` 团队提供的底花生信工具支持。
+- 感谢 `CRISPResso2` 与 `cutadapt` 生信大佬团队提供的底花工具支持！
