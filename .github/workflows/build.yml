@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.os }} Binaries
@@ -37,24 +40,25 @@ jobs:
       - name: Build Windows Single EXE
         if: matrix.os == 'windows-latest'
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name NGS_Amplicon_Tool --add-data "assets;assets" app.py
-          cp dist/NGS_Amplicon_Tool.exe ${{ matrix.asset_name }}
+          python -m PyInstaller --noconfirm --onefile --windowed --name NGS_Amplicon_Tool --add-data "assets;assets" app.py
+          copy dist\NGS_Amplicon_Tool.exe ${{ matrix.asset_name }}
 
       - name: Build Linux Binary
         if: matrix.os == 'ubuntu-latest'
         run: |
-          pyinstaller --noconfirm --onedir --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
+          python -m PyInstaller --noconfirm --onedir --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
           tar -czvf ${{ matrix.asset_name }} -C dist NGS_Amplicon_Tool
 
       - name: Build macOS App
         if: matrix.os == 'macos-latest'
         run: |
-          pyinstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
+          python -m PyInstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
           zip -r ${{ matrix.asset_name }} dist/NGS_Amplicon_Tool.app
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: ${{ matrix.asset_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
