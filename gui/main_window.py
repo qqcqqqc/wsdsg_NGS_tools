@@ -32,7 +32,7 @@ class CQLPromptDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         btn_yes = QPushButton("当然！！", self)
-        btn_yes.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; font-size: 14px; padding: 6px 12px;")
+        btn_yes.setStyleSheet("font-size: 13px; padding: 6px 12px;")
         btn_yes.clicked.connect(self.on_yes)
         btn_layout.addWidget(btn_yes)
 
@@ -146,7 +146,7 @@ class EnvDiagnosticsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"宇宙无敌NGS tool-cql定制版 v2.2 ({QT_LIB})")
+        self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2")
         self.resize(1150, 880)
         self.init_ui()
         self.run_env_check()
@@ -167,7 +167,7 @@ class MainWindow(QMainWindow):
         
         banner_layout.addStretch()
         
-        btn_recheck = QPushButton("🔍 环境诊断与一键配置", self)
+        btn_recheck = QPushButton("点我教你配置环境", self)
         btn_recheck.setStyleSheet("background-color: #00838f; color: white; font-weight: bold;")
         btn_recheck.clicked.connect(self.show_diagnostics_dialog)
         banner_layout.addWidget(btn_recheck)
