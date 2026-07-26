@@ -14,6 +14,8 @@ from gui.tab_demux import DemuxTab
 from gui.tab_crispresso import CRISPRessoTab
 from core.env_checker import check_environment
 
+VERSION = "v2.2.1"
+
 class EnvCheckThread(QThread):
     """
     Background worker thread for checking WSL / cutadapt / CRISPResso2 environment.
@@ -242,8 +244,8 @@ class EnvDiagnosticsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        # Title bar shows software name only
-        self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2")
+        # Title bar shows software name and current version dynamically
+        self.setWindowTitle(f"宇宙无敌NGS tool-cql定制版 {VERSION}")
         self.resize(1150, 880)
         self.cached_env_res = None
         self.env_thread = None
@@ -330,33 +332,38 @@ class MainWindow(QMainWindow):
                 QApplication.restoreOverrideCursor()
                 if res.returncode == 0:
                     if "Already up to date" in res.stdout or "已经是最新的" in res.stdout:
-                        QMessageBox.information(self, "检查软件更新", "✅ 当前软件已是最新版本！无需更新。")
+                        QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({VERSION})！无需更新。")
                     else:
                         QMessageBox.information(self, "更新成功", "🎉 发现并成功拉取了最新版本的代码！\n请重启软件以生效最新功能！")
                     return
 
-            # 2. Fallback to GitHub API check
+            # 2. Fallback to GitHub API check for standalone EXE / non-git users
             req = urllib.request.Request(
                 "https://api.github.com/repos/qqcqqqc/wsdsg_NGS_tools/releases/latest",
                 headers={"User-Agent": "Mozilla/5.0"}
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 data = json.loads(response.read().decode())
-                latest_tag = data.get("tag_name", "v2.2.0")
+                latest_tag = data.get("tag_name", VERSION)
                 QApplication.restoreOverrideCursor()
-                if latest_tag != "v2.2.0":
+                
+                # Normalize versions for comparison
+                norm_latest = latest_tag.lstrip("v").strip()
+                norm_current = VERSION.lstrip("v").strip()
+                
+                if norm_latest != norm_current:
                     QMessageBox.information(
                         self,
                         "发现新版本",
-                        f"🎉 发现 GitHub 上的最新发布版本: {latest_tag}！\n\n"
+                        f"🎉 发现 GitHub 上的最新发布版本: {latest_tag} (当前版本: {VERSION})！\n\n"
                         f"已为你打开仓库，请在 Releases 中下载最新安装包。"
                     )
                     webbrowser.open("https://github.com/qqcqqqc/wsdsg_NGS_tools/releases")
                 else:
-                    QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({latest_tag})！")
+                    QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({VERSION})！")
         except Exception as e:
             QApplication.restoreOverrideCursor()
-            QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本！\n(开源仓库: https://github.com/qqcqqqc/wsdsg_NGS_tools)")
+            QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({VERSION})！\n(开源仓库: https://github.com/qqcqqqc/wsdsg_NGS_tools)")
 
     def run_env_check_async(self):
         self.lbl_env_status.setText("环境状态: ⏳ 正在后台异步检测运行环境...")
