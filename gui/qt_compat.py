@@ -37,3 +37,4 @@ QTabWidget = QtWidgets.QTabWidget
 QCheckBox = QtWidgets.QCheckBox
 QGuiApplication = QtGui.QGuiApplication
 QCursor = QtGui.QCursor
+QIcon = QtGui.QIcon

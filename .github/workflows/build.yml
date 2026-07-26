@@ -35,24 +35,24 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller pillow
 
-      - name: Build Windows Single EXE
+      - name: Build Windows Single EXE with Dave Icon
         if: matrix.os == 'windows-latest'
         run: |
-          python -m PyInstaller --noconfirm --onefile --windowed --name NGS_Amplicon_Tool --add-data "assets;assets" app.py
+          python -m PyInstaller --noconfirm --onefile --windowed --name NGS_Amplicon_Tool --icon "assets/app_icon.ico" --add-data "assets;assets" app.py
           copy dist\NGS_Amplicon_Tool.exe ${{ matrix.asset_name }}
 
       - name: Build Linux Binary
         if: matrix.os == 'ubuntu-latest'
         run: |
-          python -m PyInstaller --noconfirm --onedir --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
+          python -m PyInstaller --noconfirm --onedir --name NGS_Amplicon_Tool --icon "assets/app_icon.png" --add-data "assets:assets" app.py
           tar -czvf ${{ matrix.asset_name }} -C dist NGS_Amplicon_Tool
 
       - name: Build macOS App
         if: matrix.os == 'macos-latest'
         run: |
-          python -m PyInstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
+          python -m PyInstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --icon "assets/app_icon.icns" --add-data "assets:assets" app.py || python -m PyInstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --icon "assets/app_icon.png" --add-data "assets:assets" app.py
           zip -r ${{ matrix.asset_name }} dist/NGS_Amplicon_Tool.app
 
       - name: Upload Release Asset
