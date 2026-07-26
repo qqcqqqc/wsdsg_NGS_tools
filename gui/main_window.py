@@ -10,9 +10,51 @@ from gui.tab_demux import DemuxTab
 from gui.tab_crispresso import CRISPRessoTab
 from core.env_checker import check_environment
 
+class CQLPromptDialog(QDialog):
+    """
+    Easter Egg Quiz Dialog before entering CQL Exclusive Dialog.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("你也觉得CQL宇宙最帅吗！！")
+        self.resize(380, 160)
+        self.selected_yes = False
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+
+        lbl = QLabel("你也觉得CQL宇宙最帅吗！！", self)
+        lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #d32f2f; margin: 15px 0;")
+        lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl)
+
+        btn_layout = QHBoxLayout()
+        
+        btn_yes = QPushButton("当然！！", self)
+        btn_yes.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; font-size: 14px; padding: 6px 12px;")
+        btn_yes.clicked.connect(self.on_yes)
+        btn_layout.addWidget(btn_yes)
+
+        btn_ok = QPushButton("彳亍", self)
+        btn_ok.setStyleSheet("font-size: 13px; padding: 6px 12px;")
+        btn_ok.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_ok)
+
+        btn_sure = QPushButton("确实", self)
+        btn_sure.setStyleSheet("font-size: 13px; padding: 6px 12px;")
+        btn_sure.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_sure)
+
+        layout.addLayout(btn_layout)
+
+    def on_yes(self):
+        self.selected_yes = True
+        self.accept()
+
 class EnvDiagnosticsDialog(QDialog):
     """
-    Detailed Environment Diagnostics & One-Click Guided Setup Dialog.
+    Detailed Environment Diagnostics & Guided Setup Dialog.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,15 +70,15 @@ class EnvDiagnosticsDialog(QDialog):
         lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1976d2;")
         layout.addWidget(lbl_title)
 
-        # Status cards text area (Dark background for crisp contrast against green checks)
+        # Status cards text area
         self.txt_status = QTextEdit(self)
         self.txt_status.setReadOnly(True)
         self.txt_status.setMaximumHeight(150)
         self.txt_status.setStyleSheet("background-color: #1e1e1e; color: #ffffff; font-size: 13px; font-family: Consolas, monospace;")
         layout.addWidget(self.txt_status)
 
-        # One-Click Setup Script Section
-        lbl_script_title = QLabel("💡 缺失环境一键配置脚本 (复制以下命令至 Windows PowerShell 中运行):", self)
+        # Guided Setup Script Section
+        lbl_script_title = QLabel("💡 缺失环境配置指导命令 (在 Windows PowerShell 的 WSL 中依次运行):", self)
         lbl_script_title.setStyleSheet("font-weight: bold; color: #333333; margin-top: 10px;")
         layout.addWidget(lbl_script_title)
 
@@ -54,6 +96,9 @@ class EnvDiagnosticsDialog(QDialog):
             "cd ~\n"
             "wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && bash miniconda.sh -b -p $HOME/miniconda3\n"
             "$HOME/miniconda3/bin/conda init bash && source ~/.bashrc\n\n"
+            "# 同意 Miniconda 许可协议及通道配置:\n"
+            "conda config --set auto_activate_base false\n"
+            "conda config --set accept_default_spec_license true 2>/dev/null || true\n\n"
             "# 3. 创建专属生信环境并安装 crispresso2 和 cutadapt:\n"
             "conda create -n ngs python=3.10 -y\n"
             "conda activate ngs\n"
@@ -64,11 +109,6 @@ class EnvDiagnosticsDialog(QDialog):
 
         # Action Buttons
         btn_layout = QHBoxLayout()
-
-        btn_copy = QPushButton("📋 一键复制 WSL 安装脚本", self)
-        btn_copy.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 6px 14px;")
-        btn_copy.clicked.connect(self.copy_script)
-        btn_layout.addWidget(btn_copy)
 
         btn_recheck = QPushButton("🔄 重新检测环境", self)
         btn_recheck.clicked.connect(self.refresh_diagnostics)
@@ -103,18 +143,10 @@ class EnvDiagnosticsDialog(QDialog):
 
         self.txt_status.setPlainText("\n".join(status_lines))
 
-    def copy_script(self):
-        try:
-            clipboard = QGuiApplication.clipboard()
-            clipboard.setText(self.script_box.toPlainText())
-            QMessageBox.information(self, "复制成功", "安装脚本已成功复制到剪贴板！\n请粘贴至 Windows PowerShell 中回车运行。")
-        except Exception as e:
-            QMessageBox.warning(self, "复制失败", f"无法复制到剪贴板: {e}")
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(f"跨平台 NGS & CRISPR 扩增子分析小工具 v2.2 ({QT_LIB})")
+        self.setWindowTitle(f"宇宙无敌NGS tool-cql定制版 v2.2 ({QT_LIB})")
         self.resize(1150, 880)
         self.init_ui()
         self.run_env_check()
@@ -152,18 +184,18 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.tabs)
 
-        # Footer Layout with Secret Easter Egg Button "宇宙最帅cql" at Bottom-Right Corner
+        # Footer Layout with Secret Easter Egg Button "宇宙最帅陈启亮" at Bottom-Left Corner
         footer_layout = QHBoxLayout()
         footer_layout.setContentsMargins(5, 0, 5, 2)
-        footer_layout.addStretch()
 
-        self.btn_secret_cql = QPushButton("宇宙最帅cql", self)
+        self.btn_secret_cql = QPushButton("宇宙最帅陈启亮", self)
         self.btn_secret_cql.setCursor(Qt.PointingHandCursor)
-        self.btn_secret_cql.setStyleSheet("border: none; background: transparent; color: #777777; font-size: 10px; padding: 2px 4px;")
-        self.btn_secret_cql.setToolTip("隐藏入口: 点击打开 CQL 专属拆分分析一体化")
+        self.btn_secret_cql.setStyleSheet("border: none; background: transparent; color: #888888; font-size: 11px; padding: 2px 4px;")
+        self.btn_secret_cql.setToolTip("隐藏入口: 点击进入 CQL 专属福利")
         self.btn_secret_cql.clicked.connect(self.show_cql_dialog)
         footer_layout.addWidget(self.btn_secret_cql)
 
+        footer_layout.addStretch()
         layout.addLayout(footer_layout)
 
     def run_env_check(self):
@@ -185,5 +217,7 @@ class MainWindow(QMainWindow):
         self.run_env_check()
 
     def show_cql_dialog(self):
-        dialog = CQLDialog(self)
-        dialog.exec()
+        prompt = CQLPromptDialog(self)
+        if prompt.exec() and prompt.selected_yes:
+            dialog = CQLDialog(self)
+            dialog.exec()

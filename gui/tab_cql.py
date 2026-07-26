@@ -47,13 +47,13 @@ class CQLWorkerThread(QThread):
 
 class CQLDialog(QDialog):
     """
-    Dedicated CQL All-in-One Demux & Analysis Dialog.
+    Dedicated CQL All-in-One Demux & Analysis Dialog ("宇宙最帅CQL专属福利").
     Simplified inputs: Only requires Excel file and Raw FASTQ directory.
     Output directory is automatically placed alongside Raw FASTQ directory.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("⚡ 宇宙最帅 CQL 专属拆分与分析一体化")
+        self.setWindowTitle("宇宙最帅CQL专属福利")
         self.resize(800, 580)
         self.worker = None
         self.init_ui()
@@ -62,7 +62,7 @@ class CQLDialog(QDialog):
         main_layout = QVBoxLayout(self)
 
         # Config Box
-        config_box = QGroupBox("CQL 专属拆分与分析一体化配置", self)
+        config_box = QGroupBox("宇宙最帅CQL专属福利", self)
         config_layout = QVBoxLayout(config_box)
 
         # 1. Excel Sheet Selection
@@ -94,8 +94,8 @@ class CQLDialog(QDialog):
         exec_layout = QVBoxLayout(exec_box)
 
         ctrl_layout = QHBoxLayout()
-        self.btn_run = QPushButton("开始 CQL 一体化拆分与分析", self)
-        self.btn_run.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #2e7d32; color: white; padding: 8px 20px;")
+        self.btn_run = QPushButton("GO!!", self)
+        self.btn_run.setStyleSheet("font-weight: bold; font-size: 16px; background-color: #2e7d32; color: white; padding: 10px 28px;")
         self.btn_run.clicked.connect(self.start_cql_pipeline)
         ctrl_layout.addWidget(self.btn_run)
 
@@ -103,10 +103,6 @@ class CQLDialog(QDialog):
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self.stop_cql_pipeline)
         ctrl_layout.addWidget(self.btn_stop)
-
-        btn_close = QPushButton("关闭", self)
-        btn_close.clicked.connect(self.reject)
-        ctrl_layout.addWidget(btn_close)
 
         exec_layout.addLayout(ctrl_layout)
 
@@ -201,4 +197,4 @@ class CQLDialog(QDialog):
         if self.worker and self.worker.isRunning():
             self.worker.stop()
             global_runner.kill_current_process()
-        event.accept()
+            event.accept()
