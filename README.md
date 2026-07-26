@@ -89,8 +89,7 @@
 1. **准备 Python 环境**：
    * 如果你的电脑还没有 Python，请先去 [Python 官网 (python.org)](https://www.python.org/downloads/) 下载并安装 Python 3.10+。
 2. **下载与启动**：
-   * 页面最顶上点<img width="100" height="35" alt="image" src="https://github.com/user-attachments/assets/1a802a4e-1181-4ff3-b35c-092e3be92b05" />
-   * **download zip      
+   * 页面最顶上点<img width="90" height="30" alt="image" src="https://github.com/user-attachments/assets/1a802a4e-1181-4ff3-b35c-092e3be92b05" /> download zip     
    * **🪟 Windows 用户**：解压代码包后，**直接双击 `创建桌面快捷方式.bat`**！桌面上会瞬间生成快捷方式，以后直接双击桌面图标运行！
    * **🍎 macOS / 🐧 Linux 用户**：直接双击或在终端运行 `./启动软件.sh` 即可一键拉起！
 
