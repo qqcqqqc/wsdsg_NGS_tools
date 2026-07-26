@@ -69,13 +69,12 @@ class CQLPromptDialog(QDialog):
 
 class EnvDiagnosticsDialog(QDialog):
     """
-    Detailed Environment Diagnostics & Guided Setup Dialog.
-    Uses cached result instantly and only re-runs check when '重新检测环境' is clicked.
+    Detailed Environment Diagnostics & Guided Setup Dialog supporting Windows (WSL2), macOS, and Linux.
     """
     def __init__(self, initial_env_res: dict = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🔍 后台运行环境诊断与一键配置指南")
-        self.resize(720, 540)
+        self.resize(760, 580)
         self.cached_env_res = initial_env_res
         self.check_thread = None
         self.init_ui()
@@ -95,12 +94,12 @@ class EnvDiagnosticsDialog(QDialog):
         # Status cards text area
         self.txt_status = QTextEdit(self)
         self.txt_status.setReadOnly(True)
-        self.txt_status.setMaximumHeight(150)
+        self.txt_status.setMaximumHeight(130)
         self.txt_status.setStyleSheet("background-color: #1e1e1e; color: #ffffff; font-size: 13px; font-family: Consolas, monospace;")
         layout.addWidget(self.txt_status)
 
         # Guided Setup Script Section
-        lbl_script_title = QLabel("💡 缺失环境配置指导命令 (在 Windows PowerShell 的 WSL 中依次运行):", self)
+        lbl_script_title = QLabel("💡 多平台环境配置指导命令 (请根据你的操作系统选择在终端中运行):", self)
         lbl_script_title.setStyleSheet("font-weight: bold; color: #333333; margin-top: 10px;")
         layout.addWidget(lbl_script_title)
 
@@ -109,19 +108,45 @@ class EnvDiagnosticsDialog(QDialog):
         self.script_box.setStyleSheet("background-color: #1e1e1e; color: #76ff03; font-family: Consolas, monospace; font-size: 12px;")
         
         install_script = (
-            "# 0. 如果 Windows 尚未启用 WSL2，先在 Windows PowerShell (管理员) 中运行以下命令安装 WSL2:\n"
-            "wsl --install\n"
-            "# (安装完成后重启电脑，重新打开 PowerShell 运行后续命令)\n\n"
-            "# 1. 打开 Windows PowerShell，输入 wsl 进入 Linux 环境:\n"
+            "====================================================================\n"
+            "🪟 1. Windows 用户配置指南 (在 Windows PowerShell 的 WSL 中运行):\n"
+            "====================================================================\n"
+            "# 0. 若未启用 WSL2，先在 PowerShell (管理员) 运行: wsl --install 并重启电脑\n"
             "wsl\n\n"
-            "# 2. 下载并安装 Miniconda (清华源镜像):\n"
+            "# 1. 下载并安装 Miniconda (清华源镜像):\n"
             "cd ~\n"
             "wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && bash miniconda.sh -b -p $HOME/miniconda3\n"
             "$HOME/miniconda3/bin/conda init bash && source ~/.bashrc\n\n"
-            "# 同意 Miniconda 许可协议及通道配置:\n"
+            "# 2. 同意许可协议及通道配置:\n"
             "conda config --set auto_activate_base false\n"
             "conda config --set accept_default_spec_license true 2>/dev/null || true\n\n"
-            "# 3. 创建专属运行环境并安装 crispresso2 和 cutadapt:\n"
+            "# 3. 创建专属运行环境并安装 cutadapt 与 crispresso2:\n"
+            "conda create -n ngs python=3.10 -y\n"
+            "conda activate ngs\n"
+            "conda install -c bioconda -c conda-forge crispresso2 cutadapt -y\n\n\n"
+            "====================================================================\n"
+            "🍎 2. macOS 用户配置指南 (在终端 Terminal 中运行):\n"
+            "====================================================================\n"
+            "# 1. 打开终端 Terminal，下载并安装 Miniconda (清华源镜像):\n"
+            "curl -O https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-MacOSX-arm64.sh && bash Miniconda3-latest-MacOSX-arm64.sh -b -p $HOME/miniconda3\n"
+            "$HOME/miniconda3/bin/conda init zsh && source ~/.zshrc\n\n"
+            "# 2. 同意许可协议及通道配置:\n"
+            "conda config --set auto_activate_base false\n"
+            "conda config --set accept_default_spec_license true 2>/dev/null || true\n\n"
+            "# 3. 创建专属运行环境并安装 cutadapt 与 crispresso2:\n"
+            "conda create -n ngs python=3.10 -y\n"
+            "conda activate ngs\n"
+            "conda install -c bioconda -c conda-forge crispresso2 cutadapt -y\n\n\n"
+            "====================================================================\n"
+            "🐧 3. Linux 用户配置指南 (在终端 Terminal 中运行):\n"
+            "====================================================================\n"
+            "# 1. 打开终端 Terminal，下载并安装 Miniconda (清华源镜像):\n"
+            "wget https://mirrors.tuna.tsinghua.edu.cn/anaconda/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && bash miniconda.sh -b -p $HOME/miniconda3\n"
+            "$HOME/miniconda3/bin/conda init bash && source ~/.bashrc\n\n"
+            "# 2. 同意许可协议及通道配置:\n"
+            "conda config --set auto_activate_base false\n"
+            "conda config --set accept_default_spec_license true 2>/dev/null || true\n\n"
+            "# 3. 创建专属运行环境并安装 cutadapt 与 crispresso2:\n"
             "conda create -n ngs python=3.10 -y\n"
             "conda activate ngs\n"
             "conda install -c bioconda -c conda-forge crispresso2 cutadapt -y"
@@ -147,9 +172,9 @@ class EnvDiagnosticsDialog(QDialog):
         status_lines = []
         
         if env_res['wsl_available']:
-            status_lines.append("✅ [WSL2 Linux 环境]: 已安装且运行正常")
+            status_lines.append("✅ [系统运行环境]: 已安装且运行正常")
         else:
-            status_lines.append("❌ [WSL2 Linux 环境]: 未检测到，请先在 PowerShell 管理员模式中运行 'wsl --install' 并重启电脑")
+            status_lines.append("❌ [系统运行环境]: 未检测到 WSL2，请先在 PowerShell 管理员模式中运行 'wsl --install' 并重启电脑")
 
         if env_res['cutadapt_installed']:
             msg = [m for m in env_res['messages'] if 'cutadapt' in m][0]
@@ -170,7 +195,7 @@ class EnvDiagnosticsDialog(QDialog):
     def refresh_diagnostics_async(self):
         self.btn_recheck.setEnabled(False)
         self.btn_recheck.setText("正在检测中...")
-        self.txt_status.setPlainText("正在后台异步诊断 WSL2 及依赖组件状态，请稍候...")
+        self.txt_status.setPlainText("正在后台异步诊断系统及依赖组件状态，请稍候...")
         
         self.check_thread = EnvCheckThread(self)
         self.check_thread.finished_signal.connect(self.display_env_res)
