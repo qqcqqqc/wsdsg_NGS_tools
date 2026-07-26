@@ -1,7 +1,7 @@
 # 🤪 宇宙无敌 NGS Tool-CQL 定制版 🚀
 
 <p align="center">
-  <img src="assets/wawawa.png" alt="疯狂戴夫" width="280"/>
+  <img src="assets/wawawa.png" alt="疯狂戴夫" width="480"/>
 </p>
 
 <p align="center">
