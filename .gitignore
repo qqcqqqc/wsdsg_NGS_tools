@@ -1,0 +1,49 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE & Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# NGS Data & Output Files
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.sam
+*.bai
+
+# Temp Excel / Output Directories
+*.tmp*
+.tmp*
+/Demux_Output/
+/CRISPResso_Output/
+/CQL_Pipeline_Output/
+/for_testing/
+/test_*.xlsx
+
+# Legacy Backup Directories and Scripts
+/NGS_Tools-master/
+/cleavage_sum_QQC.py
+/拆拆拆拆_非定向.py
