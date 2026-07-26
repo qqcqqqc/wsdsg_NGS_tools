@@ -74,7 +74,7 @@ class EnvDiagnosticsDialog(QDialog):
     """
     def __init__(self, initial_env_res: dict = None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("🔍 后台生信环境诊断与一键配置指南")
+        self.setWindowTitle("🔍 后台运行环境诊断与一键配置指南")
         self.resize(720, 540)
         self.cached_env_res = initial_env_res
         self.check_thread = None
@@ -88,7 +88,7 @@ class EnvDiagnosticsDialog(QDialog):
     def init_ui(self):
         layout = QVBoxLayout(self)
 
-        lbl_title = QLabel("后台生信依赖环境检测状态", self)
+        lbl_title = QLabel("后台依赖环境检测状态", self)
         lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1976d2;")
         layout.addWidget(lbl_title)
 
@@ -121,7 +121,7 @@ class EnvDiagnosticsDialog(QDialog):
             "# 同意 Miniconda 许可协议及通道配置:\n"
             "conda config --set auto_activate_base false\n"
             "conda config --set accept_default_spec_license true 2>/dev/null || true\n\n"
-            "# 3. 创建专属生信环境并安装 crispresso2 和 cutadapt:\n"
+            "# 3. 创建专属运行环境并安装 crispresso2 和 cutadapt:\n"
             "conda create -n ngs python=3.10 -y\n"
             "conda activate ngs\n"
             "conda install -c bioconda -c conda-forge crispresso2 cutadapt -y"
@@ -170,7 +170,7 @@ class EnvDiagnosticsDialog(QDialog):
     def refresh_diagnostics_async(self):
         self.btn_recheck.setEnabled(False)
         self.btn_recheck.setText("正在检测中...")
-        self.txt_status.setPlainText("正在后台异步诊断 WSL2 及生信组件状态，请稍候...")
+        self.txt_status.setPlainText("正在后台异步诊断 WSL2 及依赖组件状态，请稍候...")
         
         self.check_thread = EnvCheckThread(self)
         self.check_thread.finished_signal.connect(self.display_env_res)
@@ -179,8 +179,8 @@ class EnvDiagnosticsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        # Title bar shows software name and open-source repo address right at the top!
-        self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2  -  开源于: https://github.com/qqcqqqc/wsdsg_NGS_tools")
+        # Title bar shows software name only
+        self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2")
         self.resize(1150, 880)
         self.cached_env_res = None
         self.env_thread = None
@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
         self.header_banner.setStyleSheet("background-color: #2b2b2b; border-radius: 4px; padding: 6px;")
         banner_layout = QHBoxLayout(self.header_banner)
         
-        self.lbl_env_status = QLabel("正在诊断后台生信运行环境...", self)
+        self.lbl_env_status = QLabel("正在诊断后台运行环境...", self)
         self.lbl_env_status.setStyleSheet("color: #ffffff; font-weight: bold;")
         banner_layout.addWidget(self.lbl_env_status)
         
@@ -296,7 +296,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本！\n(开源仓库: https://github.com/qqcqqqc/wsdsg_NGS_tools)")
 
     def run_env_check_async(self):
-        self.lbl_env_status.setText("环境状态: ⏳ 正在后台异步检测生信运行环境...")
+        self.lbl_env_status.setText("环境状态: ⏳ 正在后台异步检测运行环境...")
         self.lbl_env_status.setStyleSheet("color: #888888; font-weight: bold;")
         
         self.env_thread = EnvCheckThread(self)
@@ -308,19 +308,22 @@ class MainWindow(QMainWindow):
         self.cached_env_res = env_res
         
         if env_res['cutadapt_installed'] and env_res['crispresso_installed']:
-            self.lbl_env_status.setText("环境状态: ✅ WSL2 / cutadapt / CRISPResso2 后台生信环境全部就绪！")
+            self.lbl_env_status.setText("环境状态: ✅ WSL2 / cutadapt / CRISPResso2 后台运行环境全部就绪！")
             self.lbl_env_status.setStyleSheet("color: #4caf50; font-weight: bold;")
         else:
             missing = []
             if not env_res['cutadapt_installed']: missing.append("cutadapt")
             if not env_res['crispresso_installed']: missing.append("CRISPResso2")
-            self.lbl_env_status.setText(f"环境状态: ⚠️ 缺少生信组件 [{', '.join(missing)}]，点击右侧按钮查看一键配置指南")
+            self.lbl_env_status.setText(f"环境状态: ⚠️ 缺少组件 [{', '.join(missing)}]，点击右侧按钮查看一键配置指南")
             self.lbl_env_status.setStyleSheet("color: #ff9800; font-weight: bold;")
 
     def show_diagnostics_dialog(self):
+        if self.cached_env_res and self.cached_env_res.get('cutadapt_installed') and self.cached_env_res.get('crispresso_installed'):
+            QMessageBox.information(self, "环境就绪", "我没有什么可以教你的了，环境全部就绪")
+            return
+
         dialog = EnvDiagnosticsDialog(initial_env_res=self.cached_env_res, parent=self)
         if dialog.exec():
-            # If user ran manual re-check inside dialog, update main window cache
             if dialog.cached_env_res:
                 self.on_env_check_finished(dialog.cached_env_res)
 

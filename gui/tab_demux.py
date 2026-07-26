@@ -165,7 +165,7 @@ class DemuxTab(QWidget):
 
     def show_demux_help(self):
         msg = (
-            "📖 FASTQ UDI 拆分生信参数说明：\n\n"
+            "📖 FASTQ UDI 拆分参数说明：\n\n"
             "1. 错配率 (Error Rate, 默认 0.0):\n"
             "   允许在 UDI 双端 Index 序列中发生的碱基错配比例。\n"
             "   - 0.0: 要求 Index 100% 完美精准匹配（零容错，推荐）。\n"
@@ -174,7 +174,7 @@ class DemuxTab(QWidget):
             "   强制要求 Index 序列匹配只发生替换点突变，禁止发生插入/缺失导致的移码错位。\n"
             "   这样可以绝对保证 UDI 双端解交叠拆分的准确率，防止误拆分。兼具定向与非定向双端文库！"
         )
-        QMessageBox.information(self, "拆分生信参数详细说明", msg)
+        QMessageBox.information(self, "拆分参数详细说明", msg)
 
     def browse_excel(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择拆分信息 Excel 文件", "", "Excel 文件 (*.xlsx)")
@@ -260,7 +260,7 @@ class DemuxTab(QWidget):
     def stop_demux(self):
         if self.worker:
             self.worker.stop()
-            self.append_log("\n[WARN] 用户手动强行终止拆分任务，正在停止所有底层生信子进程...\n")
+            self.append_log("\n[WARN] 用户手动强行终止拆分任务，正在停止所有底层子进程...\n")
             self.btn_run.setEnabled(True)
             self.btn_stop.setEnabled(False)
 

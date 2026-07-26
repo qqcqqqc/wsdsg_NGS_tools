@@ -202,7 +202,7 @@ class CRISPRessoTab(QWidget):
         main_layout.addWidget(header_box)
 
         # Advanced Optional Parameters Box
-        adv_box = QGroupBox("高级可选生信参数 (无需修改可保持默认)", self)
+        adv_box = QGroupBox("高级可选参数 (无需修改可保持默认)", self)
         adv_layout = QHBoxLayout(adv_box)
 
         adv_layout.addWidget(QLabel("定量窗口:"))
@@ -363,7 +363,7 @@ class CRISPRessoTab(QWidget):
 
     def show_parameter_help(self):
         msg = (
-            "📖 CRISPResso2 高级生信参数说明：\n\n"
+            "📖 CRISPResso2 高级参数说明：\n\n"
             "1. 定量窗口 (Quantification Window Size, 默认 10):\n"
             "   以预计切割位点为中心，向左右延伸统计突变的核苷酸宽度。\n\n"
             "2. 切割偏移 (Cleavage Offset, 默认 -3):\n"
@@ -375,7 +375,7 @@ class CRISPRessoTab(QWidget):
             "5. 绘图显示窗口 (Plot Window Size, 默认 20):\n"
             "   控制生成的热图及 HTML 可视化报告中展示的左右碱基宽度范围。"
         )
-        QMessageBox.information(self, "生信参数详细说明", msg)
+        QMessageBox.information(self, "参数详细说明", msg)
 
     def toggle_run_mode_view(self, idx: int):
         is_batch = (idx == 0)
@@ -562,7 +562,7 @@ class CRISPRessoTab(QWidget):
         if self.worker:
             self.worker.stop()
             global_runner.kill_current_process()
-            self.append_log("\n[WARN] 用户已强行终止基因编辑分析任务，并彻底强杀后台 WSL 生信进程！\n")
+            self.append_log("\n[WARN] 用户已强行终止基因编辑分析任务，并彻底强杀后台 WSL 进程！\n")
             self.btn_run.setEnabled(True)
             self.btn_stop.setEnabled(False)
 

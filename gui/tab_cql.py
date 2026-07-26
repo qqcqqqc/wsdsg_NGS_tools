@@ -162,7 +162,7 @@ class CQLDialog(QDialog):
         if self.worker:
             self.worker.stop()
             global_runner.kill_current_process()
-            self.append_log("\n[WARN] 用户已强行终止 CQL 一体化流水线，并强杀底层生信进程！\n")
+            self.append_log("\n[WARN] 用户已强行终止 CQL 一体化流水线，并强杀底层运行进程！\n")
             self.btn_run.setEnabled(True)
             self.btn_stop.setEnabled(False)
 
