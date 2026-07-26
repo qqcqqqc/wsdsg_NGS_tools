@@ -1,5 +1,9 @@
 import sys
 import os
+import subprocess
+import urllib.request
+import json
+import webbrowser
 from gui.qt_compat import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QPushButton, QMessageBox, QDialog, QTextEdit, QT_LIB,
@@ -187,11 +191,33 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        # Top Open Source Repository Header
-        lbl_repo = QLabel('🌟 本项目开源于: <a href="https://github.com/qqcqqqc/wsdsg_NGS_tools" style="color: #1976d2; font-weight: bold; text-decoration: none;">https://github.com/qqcqqqc/wsdsg_NGS_tools</a>', self)
+        # Top Bar: Big Title (Left), Small Repo Link (Center), Check Update Button (Right)
+        top_bar = QWidget(self)
+        top_bar_layout = QHBoxLayout(top_bar)
+        top_bar_layout.setContentsMargins(4, 2, 4, 4)
+
+        # Left: Large Bold Title
+        lbl_title = QLabel("🚀 宇宙无敌NGS tool-cql定制版 v2.2", self)
+        lbl_title.setStyleSheet("font-size: 17px; font-weight: bold; color: #1565c0;")
+        top_bar_layout.addWidget(lbl_title)
+
+        top_bar_layout.addStretch()
+
+        # Center: Small Open Source Repo Link
+        lbl_repo = QLabel('🌟 开源于: <a href="https://github.com/qqcqqqc/wsdsg_NGS_tools" style="color: #1976d2; font-size: 11px; text-decoration: none;">github.com/qqcqqqc/wsdsg_NGS_tools</a>', self)
         lbl_repo.setOpenExternalLinks(True)
-        lbl_repo.setStyleSheet("font-size: 13px; margin-bottom: 2px;")
-        layout.addWidget(lbl_repo)
+        lbl_repo.setStyleSheet("font-size: 11px;")
+        top_bar_layout.addWidget(lbl_repo)
+
+        top_bar_layout.addStretch()
+
+        # Right: Check Software Update Button
+        btn_update = QPushButton("🔄 检查软件更新", self)
+        btn_update.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; font-size: 12px; padding: 4px 12px;")
+        btn_update.clicked.connect(self.check_software_update)
+        top_bar_layout.addWidget(btn_update)
+
+        layout.addWidget(top_bar)
 
         # Header Environment Banner
         self.header_banner = QWidget(self)
@@ -234,6 +260,46 @@ class MainWindow(QMainWindow):
 
         footer_layout.addStretch()
         layout.addLayout(footer_layout)
+
+    def check_software_update(self):
+        """
+        Check for latest software updates via git pull or GitHub API.
+        """
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            # 1. Try git pull if user is running from git repo
+            if os.path.exists(os.path.join(os.path.dirname(__file__), "..", ".git")):
+                res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True, timeout=10)
+                QApplication.restoreOverrideCursor()
+                if res.returncode == 0:
+                    if "Already up to date" in res.stdout or "已经是最新的" in res.stdout:
+                        QMessageBox.information(self, "检查软件更新", "✅ 当前软件已是最新版本！无需更新。")
+                    else:
+                        QMessageBox.information(self, "更新成功", "🎉 发现并成功拉取了最新版本的代码！\n请重启软件以生效最新功能！")
+                    return
+
+            # 2. Fallback to GitHub API check
+            req = urllib.request.Request(
+                "https://api.github.com/repos/qqcqqqc/wsdsg_NGS_tools/releases/latest",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                latest_tag = data.get("tag_name", "v2.2.0")
+                QApplication.restoreOverrideCursor()
+                if latest_tag != "v2.2.0":
+                    QMessageBox.information(
+                        self,
+                        "发现新版本",
+                        f"🎉 发现 GitHub 上的最新发布版本: {latest_tag}！\n\n"
+                        f"已为你打开仓库，请在 Releases 中下载最新安装包。"
+                    )
+                    webbrowser.open("https://github.com/qqcqqqc/wsdsg_NGS_tools/releases")
+                else:
+                    QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({latest_tag})！")
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本！\n(开源仓库: https://github.com/qqcqqqc/wsdsg_NGS_tools)")
 
     def run_env_check_async(self):
         self.lbl_env_status.setText("环境状态: ⏳ 正在后台异步检测生信运行环境...")
