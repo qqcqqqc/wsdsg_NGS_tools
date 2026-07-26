@@ -13,11 +13,11 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset_name: NGS_Amplicon_Tool_${{ github.ref_name }}_Windows.zip
+            asset_name: NGS_Amplicon_Tool.exe
           - os: ubuntu-latest
-            asset_name: NGS_Amplicon_Tool_${{ github.ref_name }}_Linux.tar.gz
+            asset_name: NGS_Amplicon_Tool_v2.2.0_Linux.tar.gz
           - os: macos-latest
-            asset_name: NGS_Amplicon_Tool_${{ github.ref_name }}_macOS.zip
+            asset_name: NGS_Amplicon_Tool_v2.2.0_macOS.zip
 
     steps:
       - name: Checkout Repository
@@ -34,24 +34,23 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build Executable with PyInstaller
-        run: |
-          pyinstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
-
-      - name: Package Windows Binary
+      - name: Build Windows Single EXE
         if: matrix.os == 'windows-latest'
         run: |
-          powershell Compress-Archive -Path dist/NGS_Amplicon_Tool -DestinationPath ${{ matrix.asset_name }}
+          pyinstaller --noconfirm --onefile --windowed --name NGS_Amplicon_Tool --add-data "assets;assets" app.py
+          cp dist/NGS_Amplicon_Tool.exe ${{ matrix.asset_name }}
 
-      - name: Package Linux Binary
+      - name: Build Linux Binary
         if: matrix.os == 'ubuntu-latest'
         run: |
+          pyinstaller --noconfirm --onedir --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
           tar -czvf ${{ matrix.asset_name }} -C dist NGS_Amplicon_Tool
 
-      - name: Package macOS Binary
+      - name: Build macOS App
         if: matrix.os == 'macos-latest'
         run: |
-          zip -r ${{ matrix.asset_name }} dist/NGS_Amplicon_Tool
+          pyinstaller --noconfirm --onedir --windowed --name NGS_Amplicon_Tool --add-data "assets:assets" app.py
+          zip -r ${{ matrix.asset_name }} dist/NGS_Amplicon_Tool.app
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
