@@ -25,6 +25,44 @@ class EnvCheckThread(QThread):
         env_res = check_environment()
         self.finished_signal.emit(env_res)
 
+class EnvReadyDialog(QDialog):
+    """
+    Fun dialog popped up when environment is already 100% ready.
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("环境全部就绪")
+        self.resize(420, 180)
+        self.wants_secret_guide = False
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+
+        lbl = QLabel("为师没有什么可以教你的了😌", self)
+        lbl.setStyleSheet("font-size: 19px; font-weight: bold; color: #1565c0; margin: 20px 0;")
+        lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(15)
+
+        btn_ok = QPushButton("彳亍", self)
+        btn_ok.setStyleSheet("font-size: 13px; padding: 6px 16px;")
+        btn_ok.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_ok)
+
+        btn_guide = QPushButton("我还想看武林秘籍🙏", self)
+        btn_guide.setStyleSheet("font-size: 13px; padding: 6px 16px;")
+        btn_guide.clicked.connect(self.on_secret_guide)
+        btn_layout.addWidget(btn_guide)
+
+        layout.addLayout(btn_layout)
+
+    def on_secret_guide(self):
+        self.wants_secret_guide = True
+        self.accept()
+
 class CQLPromptDialog(QDialog):
     """
     Easter Egg Quiz Dialog before entering CQL Exclusive Dialog.
@@ -344,8 +382,10 @@ class MainWindow(QMainWindow):
 
     def show_diagnostics_dialog(self):
         if self.cached_env_res and self.cached_env_res.get('cutadapt_installed') and self.cached_env_res.get('crispresso_installed'):
-            QMessageBox.information(self, "环境就绪", "我没有什么可以教你的了，环境全部就绪")
-            return
+            dlg = EnvReadyDialog(self)
+            dlg.exec()
+            if not dlg.wants_secret_guide:
+                return
 
         dialog = EnvDiagnosticsDialog(initial_env_res=self.cached_env_res, parent=self)
         if dialog.exec():
