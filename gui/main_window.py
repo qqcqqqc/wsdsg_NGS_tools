@@ -7,7 +7,7 @@ import webbrowser
 from gui.qt_compat import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QPushButton, QMessageBox, QDialog, QTextEdit, QT_LIB,
-    QGuiApplication, Qt, QThread, Signal, Slot
+    QGuiApplication, Qt, QThread, Signal, Slot, QApplication
 )
 from gui.tab_cql import CQLDialog
 from gui.tab_demux import DemuxTab
@@ -179,7 +179,8 @@ class EnvDiagnosticsDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2")
+        # Title bar shows software name and open-source repo address right at the top!
+        self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2  -  开源于: https://github.com/qqcqqqc/wsdsg_NGS_tools")
         self.resize(1150, 880)
         self.cached_env_res = None
         self.env_thread = None
@@ -191,22 +192,15 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
-        # Top Bar: Big Title (Left), Small Repo Link (Center), Check Update Button (Right)
+        # Top Bar: Small Repo Link (Left), Check Update Button (Right)
         top_bar = QWidget(self)
         top_bar_layout = QHBoxLayout(top_bar)
         top_bar_layout.setContentsMargins(4, 2, 4, 4)
 
-        # Left: Large Bold Title
-        lbl_title = QLabel("🚀 宇宙无敌NGS tool-cql定制版 v2.2", self)
-        lbl_title.setStyleSheet("font-size: 17px; font-weight: bold; color: #1565c0;")
-        top_bar_layout.addWidget(lbl_title)
-
-        top_bar_layout.addStretch()
-
-        # Center: Small Open Source Repo Link
-        lbl_repo = QLabel('🌟 开源于: <a href="https://github.com/qqcqqqc/wsdsg_NGS_tools" style="color: #1976d2; font-size: 11px; text-decoration: none;">github.com/qqcqqqc/wsdsg_NGS_tools</a>', self)
+        # Left: Small Open Source Repo Link
+        lbl_repo = QLabel('🌟 开源于: <a href="https://github.com/qqcqqqc/wsdsg_NGS_tools" style="color: #64b5f6; font-size: 11px; text-decoration: none;">github.com/qqcqqqc/wsdsg_NGS_tools</a>', self)
         lbl_repo.setOpenExternalLinks(True)
-        lbl_repo.setStyleSheet("font-size: 11px;")
+        lbl_repo.setStyleSheet("font-size: 11px; color: #888888;")
         top_bar_layout.addWidget(lbl_repo)
 
         top_bar_layout.addStretch()
