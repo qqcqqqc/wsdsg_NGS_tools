@@ -14,7 +14,12 @@ def main():
     if os.path.exists(icon_path):
         window.setWindowIcon(QIcon(icon_path))
     window.show()
-    sys.exit(app.exec_())
+
+    # Use exec() if available, fallback to exec_() for legacy Qt
+    if hasattr(app, 'exec'):
+        sys.exit(app.exec())
+    else:
+        sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
