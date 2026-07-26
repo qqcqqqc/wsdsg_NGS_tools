@@ -11,6 +11,7 @@ build/
 dist/
 *.egg-info/
 .eggs/
+*.spec
 
 # Environments
 .env
@@ -42,8 +43,3 @@ ENV/
 /CQL_Pipeline_Output/
 /for_testing/
 /test_*.xlsx
-
-# Legacy Backup Directories and Scripts
-/NGS_Tools-master/
-/cleavage_sum_QQC.py
-/拆拆拆拆_非定向.py

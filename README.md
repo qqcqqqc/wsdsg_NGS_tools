@@ -1,7 +1,7 @@
 # 🤪 宇宙无敌 NGS Tool-CQL 定制版 🚀
 
 <p align="center">
-  <img src="assets/wawawa.png" alt="疯狂戴夫" width="680"/>
+  <img src="assets/wawawa.png" alt="疯狂戴夫" width="580"/>
 </p>
 
 <p align="center">
@@ -12,7 +12,7 @@
 
 ## 🤪 这究竟是个啥奇葩小工具？
 
-这是一个运行在桌面的 **NGS 扩增子测序数据拆分与 CRISPR 基因编辑效率分析神器**！
+这是一个nb的 **NGS 扩增子分析tool**！
 
 专门用来拯救被分析折磨得掉头发的湿实验同学：
 * 命令行太长记不住？`cutadapt` 参数填错直接崩掉？
