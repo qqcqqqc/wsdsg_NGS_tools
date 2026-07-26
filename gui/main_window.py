@@ -187,6 +187,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
 
+        # Top Open Source Repository Header
+        lbl_repo = QLabel('🌟 本项目开源于: <a href="https://github.com/qqcqqqc/wsdsg_NGS_tools" style="color: #1976d2; font-weight: bold; text-decoration: none;">https://github.com/qqcqqqc/wsdsg_NGS_tools</a>', self)
+        lbl_repo.setOpenExternalLinks(True)
+        lbl_repo.setStyleSheet("font-size: 13px; margin-bottom: 2px;")
+        layout.addWidget(lbl_repo)
+
         # Header Environment Banner
         self.header_banner = QWidget(self)
         self.header_banner.setStyleSheet("background-color: #2b2b2b; border-radius: 4px; padding: 6px;")
