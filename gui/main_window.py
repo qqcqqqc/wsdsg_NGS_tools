@@ -3,12 +3,23 @@ import os
 from gui.qt_compat import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
     QLabel, QPushButton, QMessageBox, QDialog, QTextEdit, QT_LIB,
-    QGuiApplication, Qt
+    QGuiApplication, Qt, QThread, Signal, Slot
 )
 from gui.tab_cql import CQLDialog
 from gui.tab_demux import DemuxTab
 from gui.tab_crispresso import CRISPRessoTab
 from core.env_checker import check_environment
+
+class EnvCheckThread(QThread):
+    """
+    Background worker thread for checking WSL / cutadapt / CRISPResso2 environment.
+    Runs asynchronously without freezing the main GUI event loop.
+    """
+    finished_signal = Signal(dict)
+
+    def run(self):
+        env_res = check_environment()
+        self.finished_signal.emit(env_res)
 
 class CQLPromptDialog(QDialog):
     """
@@ -55,13 +66,20 @@ class CQLPromptDialog(QDialog):
 class EnvDiagnosticsDialog(QDialog):
     """
     Detailed Environment Diagnostics & Guided Setup Dialog.
+    Uses cached result instantly and only re-runs check when '重新检测环境' is clicked.
     """
-    def __init__(self, parent=None):
+    def __init__(self, initial_env_res: dict = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("🔍 后台生信环境诊断与一键配置指南")
         self.resize(720, 540)
+        self.cached_env_res = initial_env_res
+        self.check_thread = None
         self.init_ui()
-        self.refresh_diagnostics()
+
+        if self.cached_env_res:
+            self.display_env_res(self.cached_env_res)
+        else:
+            self.refresh_diagnostics_async()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -110,9 +128,9 @@ class EnvDiagnosticsDialog(QDialog):
         # Action Buttons
         btn_layout = QHBoxLayout()
 
-        btn_recheck = QPushButton("🔄 重新检测环境", self)
-        btn_recheck.clicked.connect(self.refresh_diagnostics)
-        btn_layout.addWidget(btn_recheck)
+        self.btn_recheck = QPushButton("🔄 重新检测环境", self)
+        self.btn_recheck.clicked.connect(self.refresh_diagnostics_async)
+        btn_layout.addWidget(self.btn_recheck)
 
         btn_close = QPushButton("关闭", self)
         btn_close.clicked.connect(self.accept)
@@ -120,8 +138,8 @@ class EnvDiagnosticsDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-    def refresh_diagnostics(self):
-        env_res = check_environment()
+    def display_env_res(self, env_res: dict):
+        self.cached_env_res = env_res
         status_lines = []
         
         if env_res['wsl_available']:
@@ -142,14 +160,27 @@ class EnvDiagnosticsDialog(QDialog):
             status_lines.append("❌ [CRISPResso2 分析工具]: 未检测到，基因编辑分析功能将不可用")
 
         self.txt_status.setPlainText("\n".join(status_lines))
+        self.btn_recheck.setEnabled(True)
+        self.btn_recheck.setText("🔄 重新检测环境")
+
+    def refresh_diagnostics_async(self):
+        self.btn_recheck.setEnabled(False)
+        self.btn_recheck.setText("正在检测中...")
+        self.txt_status.setPlainText("正在后台异步诊断 WSL2 及生信组件状态，请稍候...")
+        
+        self.check_thread = EnvCheckThread(self)
+        self.check_thread.finished_signal.connect(self.display_env_res)
+        self.check_thread.start()
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("宇宙无敌NGS tool-cql定制版 v2.2")
         self.resize(1150, 880)
+        self.cached_env_res = None
+        self.env_thread = None
         self.init_ui()
-        self.run_env_check()
+        self.run_env_check_async()
 
     def init_ui(self):
         central_widget = QWidget(self)
@@ -198,8 +229,17 @@ class MainWindow(QMainWindow):
         footer_layout.addStretch()
         layout.addLayout(footer_layout)
 
-    def run_env_check(self):
-        env_res = check_environment()
+    def run_env_check_async(self):
+        self.lbl_env_status.setText("环境状态: ⏳ 正在后台异步检测生信运行环境...")
+        self.lbl_env_status.setStyleSheet("color: #888888; font-weight: bold;")
+        
+        self.env_thread = EnvCheckThread(self)
+        self.env_thread.finished_signal.connect(self.on_env_check_finished)
+        self.env_thread.start()
+
+    @Slot(dict)
+    def on_env_check_finished(self, env_res: dict):
+        self.cached_env_res = env_res
         
         if env_res['cutadapt_installed'] and env_res['crispresso_installed']:
             self.lbl_env_status.setText("环境状态: ✅ WSL2 / cutadapt / CRISPResso2 后台生信环境全部就绪！")
@@ -212,9 +252,11 @@ class MainWindow(QMainWindow):
             self.lbl_env_status.setStyleSheet("color: #ff9800; font-weight: bold;")
 
     def show_diagnostics_dialog(self):
-        dialog = EnvDiagnosticsDialog(self)
-        dialog.exec()
-        self.run_env_check()
+        dialog = EnvDiagnosticsDialog(initial_env_res=self.cached_env_res, parent=self)
+        if dialog.exec():
+            # If user ran manual re-check inside dialog, update main window cache
+            if dialog.cached_env_res:
+                self.on_env_check_finished(dialog.cached_env_res)
 
     def show_cql_dialog(self):
         prompt = CQLPromptDialog(self)
