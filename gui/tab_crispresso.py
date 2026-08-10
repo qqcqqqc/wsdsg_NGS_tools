@@ -125,16 +125,28 @@ class CRISPRessoSingleWorker(QThread):
             if self.r2_path:
                 cmd.extend(["--fastq_r2", win_to_wsl_path(self.r2_path) if is_windows() else self.r2_path])
                 
+            if self.guide:
+                sg_l = len(self.guide)
+                required_half_w = max(sg_l + self.cleavage_offset + 10, 15 - self.cleavage_offset)
+                calc_plot_win = 2 * required_half_w
+                plot_win_arg = max(self.plot_window, calc_plot_win)
+
+                required_quant_half = max(sg_l + self.cleavage_offset + 5, 12 - self.cleavage_offset)
+                quant_win_arg = max(self.quant_window, required_quant_half)
+            else:
+                plot_win_arg = self.plot_window
+                quant_win_arg = self.quant_window
+
             cmd.extend([
                 "--amplicon_seq", self.amplicon,
                 "--guide_seq", self.guide,
                 "--output_folder", win_to_wsl_path(self.output_dir) if is_windows() else self.output_dir,
-                "--quantification_window_size", str(self.quant_window),
+                "--quantification_window_size", str(quant_win_arg),
                 "--cleavage_offset", str(self.cleavage_offset),
                 "--min_average_read_quality", str(self.min_read_qual),
                 "--exclude_bp_from_left", str(self.exclude_left),
                 "--exclude_bp_from_right", str(self.exclude_right),
-                "--plot_window_size", str(self.plot_window)
+                "--plot_window_size", str(plot_win_arg)
             ])
             
             if self.mode == "Base Editing (BE)":

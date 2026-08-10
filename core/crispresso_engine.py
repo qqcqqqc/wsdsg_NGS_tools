@@ -343,6 +343,18 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                 print(f"Error parsing Indel stats in BE folder for {s_name}: {e}")
 
         # 2. Determine exact offset of plot window relative to sgRNA start
+        sg_start_exact = None
+        if s_sg and s_amp:
+            s_sg_clean = s_sg.strip().upper()
+            s_amp_clean = s_amp.strip().upper()
+            idx = s_amp_clean.find(s_sg_clean)
+            if idx != -1:
+                sg_start_exact = idx
+            else:
+                idx_rc = s_amp_clean.find(rc(s_sg_clean))
+                if idx_rc != -1:
+                    sg_start_exact = idx_rc
+
         offset = None
         if info_file and os.path.exists(info_file):
             try:
@@ -353,12 +365,16 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                     first_k = list(info_data['results']['refs'].keys())[0]
                     ref_dict = info_data['results']['refs'][first_k]
                 
-                sg_intervals = ref_dict.get('sgRNA_intervals', [])
                 plot_idxs = ref_dict.get('sgRNA_plot_idxs', [])
-                if sg_intervals and plot_idxs:
-                    sg_start = int(sg_intervals[0][0])
+                if plot_idxs:
                     plot_start = int(plot_idxs[0][0])
-                    offset = int(plot_start - sg_start)
+                    if sg_start_exact is not None:
+                        offset = int(plot_start - sg_start_exact)
+                    else:
+                        sg_intervals = ref_dict.get('sgRNA_intervals', [])
+                        if sg_intervals:
+                            sg_start_info = int(sg_intervals[0][0])
+                            offset = int(plot_start - sg_start_info)
             except Exception as e:
                 print(f"Error reading info json offset for {s_name}: {e}")
 
@@ -436,10 +452,10 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         df_be[' '] = '' # Blank visual spacer column
         
         base_cols = ['样品名', '描述', '原始碱基', '修改后碱基', '测序深度']
-        pos_cols = [p for p in range(1, max_sg_len + 1) if p in df_be.columns]
-        unspec_cols = [f"u{p}" for p in range(1, max_sg_len + 1) if f"u{p}" in df_be.columns]
+        all_pos = [p for p in range(1, max_sg_len + 1) if p in df_be.columns]
+        all_unspec = [f"u{p}" for p in range(1, max_sg_len + 1) if f"u{p}" in df_be.columns]
         
-        ordered_be_cols = base_cols + pos_cols + [' '] + unspec_cols
+        ordered_be_cols = base_cols + all_pos + [' '] + all_unspec
         existing_be_cols = [c for c in ordered_be_cols if c in df_be.columns]
         df_be = df_be[existing_be_cols]
 
@@ -455,7 +471,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                 # Write Sheet 1: BE Base Editing Window Efficiencies
                 df_be.to_excel(writer, index=False, sheet_name="BE 碱基编辑效率汇总")
                 ws_be = writer.sheets["BE 碱基编辑效率汇总"]
-                percentage_be_cols = pos_cols + unspec_cols
+                percentage_be_cols = all_pos + all_unspec
                 col_be_indices = [df_be.columns.get_loc(c) + 1 for c in percentage_be_cols if c in df_be.columns]
                 for row in range(2, len(df_be) + 2):
                     for col_idx in col_be_indices:
@@ -544,7 +560,17 @@ def run_crispresso_batch_pipeline(
                 if log_callback:
                     log_callback(f"[INFO] 样本 {s_name} 的 sgRNA 位于 Amplicon 反向互补链上，已自动修正链方向 (Reverse Complement)！\n")
 
-        plot_win_arg = max(plot_window, len(s_sg)) if s_sg else plot_window
+        if s_sg:
+            sg_l = len(s_sg)
+            required_half_w = max(sg_l + cleavage_offset + 10, 15 - cleavage_offset)
+            calc_plot_win = 2 * required_half_w
+            plot_win_arg = max(plot_window, calc_plot_win)
+            
+            required_quant_half = max(sg_l + cleavage_offset + 5, 12 - cleavage_offset)
+            quant_win_arg = max(quant_window, required_quant_half)
+        else:
+            plot_win_arg = plot_window
+            quant_win_arg = quant_window
 
         if log_callback:
             log_callback(f"\n[{s_idx}/{total_samples}] 正在处理样本: {s_name} ({s_desc})\n")
@@ -569,7 +595,7 @@ def run_crispresso_batch_pipeline(
             "--amplicon_seq", s_amp,
             "--guide_seq", s_sg,
             "--output_folder", win_to_wsl_path(sample_out_dir) if is_windows() else sample_out_dir,
-            "--quantification_window_size", str(quant_window),
+            "--quantification_window_size", str(quant_win_arg),
             "--cleavage_offset", str(cleavage_offset),
             "--min_average_read_quality", str(min_read_qual),
             "--exclude_bp_from_left", str(exclude_left),
