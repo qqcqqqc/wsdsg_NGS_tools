@@ -14,6 +14,71 @@ from core.crispresso_engine import (
     run_crispresso_batch_pipeline
 )
 
+class DropLineEdit(QLineEdit):
+    """QLineEdit supporting Drag and Drop of files and directories."""
+    file_dropped = Signal(str)
+
+    def __init__(self, filter_type='any', parent=None):
+        super().__init__(parent)
+        self.filter_type = filter_type  # 'excel', 'dir', 'file', 'any'
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = urls[0].toLocalFile()
+                if self.filter_type == 'excel' and (path.endswith('.xlsx') or path.endswith('.xls')):
+                    event.acceptProposedAction()
+                    return
+                elif self.filter_type == 'dir' and os.path.isdir(path):
+                    event.acceptProposedAction()
+                    return
+                elif self.filter_type in ['file', 'any'] and os.path.exists(path):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = os.path.abspath(urls[0].toLocalFile())
+                self.setText(path)
+                self.file_dropped.emit(path)
+                event.acceptProposedAction()
+
+class DropTableWidget(QTableWidget):
+    """QTableWidget subclass supporting drag-and-drop of Excel files and FASTQ directories."""
+    excel_dropped = Signal(str)
+    dir_dropped = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = urls[0].toLocalFile()
+                if path.endswith('.xlsx') or path.endswith('.xls') or os.path.isdir(path):
+                    event.acceptProposedAction()
+                    return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = os.path.abspath(urls[0].toLocalFile())
+                if path.endswith('.xlsx') or path.endswith('.xls'):
+                    self.excel_dropped.emit(path)
+                    event.acceptProposedAction()
+                elif os.path.isdir(path):
+                    self.dir_dropped.emit(path)
+                    event.acceptProposedAction()
+
 class CRISPRessoBatchWorker(QThread):
     log_signal = Signal(str)
     progress_signal = Signal(int, int)
@@ -62,9 +127,12 @@ class CRISPRessoBatchWorker(QThread):
                 log_callback=self._emit_log,
                 progress_callback=self._emit_progress
             )
-            self.finished_signal.emit(True, summary_excel)
+            if dirs:
+                self.finished_signal.emit(True, summary_excel)
+            else:
+                self.finished_signal.emit(False, "")
         except Exception as e:
-            self._emit_log(f"\n[ERROR] 批量分析运行失败: {str(e)}\n")
+            self._emit_log(f"\n[ERROR] 批量分析运行异常: {str(e)}\n")
             self.finished_signal.emit(False, "")
 
     def _emit_log(self, text: str):
@@ -93,8 +161,8 @@ class CRISPRessoSingleWorker(QThread):
         mode: str,
         hdr_donor: str,
         output_dir: str,
-        quant_window: int,
-        cleavage_offset: int,
+        quant_window: int = 10,
+        cleavage_offset: int = -3,
         min_read_qual: int = 30,
         exclude_left: int = 15,
         exclude_right: int = 15,
@@ -220,11 +288,13 @@ class CRISPRessoTab(QWidget):
         adv_layout.addWidget(QLabel("定量窗口:"))
         self.txt_window = QLineEdit("10", self)
         self.txt_window.setMaximumWidth(40)
+        self.txt_window.setToolTip("定量窗口：软件已实现自动根据 sgRNA 长度延伸全覆盖，填 10 为基准窗口。")
         adv_layout.addWidget(self.txt_window)
 
         adv_layout.addWidget(QLabel("切割偏移:"))
         self.txt_offset = QLineEdit("-3", self)
         self.txt_offset.setMaximumWidth(40)
+        self.txt_offset.setToolTip("切割位点偏移量（SpCas9 默认 -3，即 PAM 上游 3bp 处切割）。")
         adv_layout.addWidget(self.txt_offset)
 
         adv_layout.addWidget(QLabel("最小质量分(Q30):"))
@@ -245,6 +315,7 @@ class CRISPRessoTab(QWidget):
         adv_layout.addWidget(QLabel("绘图显示窗口(bp):"))
         self.txt_plot_win = QLineEdit("20", self)
         self.txt_plot_win.setMaximumWidth(40)
+        self.txt_plot_win.setToolTip("绘图显示窗口：已升级为自动按 sgRNA 长度自适应 (涵盖 sgRNA -10nt ~ sgRNA +10nt)，填 20 为保底最小值。")
         adv_layout.addWidget(self.txt_plot_win)
 
         btn_help_params = QPushButton("💡 参数说明", self)
@@ -261,7 +332,8 @@ class CRISPRessoTab(QWidget):
 
         excel_layout = QHBoxLayout()
         excel_layout.addWidget(QLabel("分析信息表 (Excel):"))
-        self.txt_batch_excel = QLineEdit(self)
+        self.txt_batch_excel = DropLineEdit(filter_type='excel', parent=self)
+        self.txt_batch_excel.setPlaceholderText("选择或直接将 Excel 分析表拖入此处 (*.xlsx)...")
         self.txt_batch_excel.textChanged.connect(self.load_batch_excel)
         excel_layout.addWidget(self.txt_batch_excel)
         btn_browse_excel = QPushButton("浏览 Excel...", self)
@@ -271,8 +343,8 @@ class CRISPRessoTab(QWidget):
 
         fq_layout = QHBoxLayout()
         fq_layout.addWidget(QLabel("FASTQ 文件夹:"))
-        self.txt_batch_fq = QLineEdit(self)
-        self.txt_batch_fq.setPlaceholderText("选择包含待分析 FASTQ 文件的保存目录...")
+        self.txt_batch_fq = DropLineEdit(filter_type='dir', parent=self)
+        self.txt_batch_fq.setPlaceholderText("选择或直接将待分析 FASTQ 目录拖入此处...")
         fq_layout.addWidget(self.txt_batch_fq)
         btn_browse_fq = QPushButton("选择 FASTQ 目录...", self)
         btn_browse_fq.clicked.connect(self.browse_batch_fq_dir)
@@ -280,10 +352,12 @@ class CRISPRessoTab(QWidget):
         batch_layout.addLayout(fq_layout)
 
         # Read-only compact table for previewing imported Excel sheet (narrowed height)
-        self.table_batch = QTableWidget(self)
+        self.table_batch = DropTableWidget(self)
         self.table_batch.setMaximumHeight(95)
         self.table_batch.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table_batch.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table_batch.excel_dropped.connect(self.txt_batch_excel.setText)
+        self.table_batch.dir_dropped.connect(self.txt_batch_fq.setText)
         batch_layout.addWidget(self.table_batch)
 
         main_layout.addWidget(self.batch_box)
@@ -294,8 +368,8 @@ class CRISPRessoTab(QWidget):
 
         r1_layout = QHBoxLayout()
         r1_layout.addWidget(QLabel("FASTQ R1 文件:"))
-        self.txt_r1 = QLineEdit(self)
-        self.txt_r1.setPlaceholderText("选择 R1.fastq.gz...")
+        self.txt_r1 = DropLineEdit(filter_type='file', parent=self)
+        self.txt_r1.setPlaceholderText("选择或拖入 R1.fastq.gz...")
         r1_layout.addWidget(self.txt_r1)
         btn_r1 = QPushButton("浏览 R1", self)
         btn_r1.clicked.connect(self.browse_r1)
@@ -304,8 +378,8 @@ class CRISPRessoTab(QWidget):
 
         r2_layout = QHBoxLayout()
         r2_layout.addWidget(QLabel("FASTQ R2 文件 (可选):"))
-        self.txt_r2 = QLineEdit(self)
-        self.txt_r2.setPlaceholderText("选择 R2.fastq.gz (单端可留空)...")
+        self.txt_r2 = DropLineEdit(filter_type='file', parent=self)
+        self.txt_r2.setPlaceholderText("选择或拖入 R2.fastq.gz (单端可留空)...")
         r2_layout.addWidget(self.txt_r2)
         btn_r2 = QPushButton("浏览 R2", self)
         btn_r2.clicked.connect(self.browse_r2)
@@ -338,8 +412,8 @@ class CRISPRessoTab(QWidget):
 
         out_layout = QHBoxLayout()
         out_layout.addWidget(QLabel("结果输出目录:"))
-        self.txt_output_dir = QLineEdit(self)
-        self.txt_output_dir.setPlaceholderText("选择结果保存目录...")
+        self.txt_output_dir = DropLineEdit(filter_type='dir', parent=self)
+        self.txt_output_dir.setPlaceholderText("选择或直接拖入结果保存目录...")
         out_layout.addWidget(self.txt_output_dir)
         btn_out = QPushButton("选择目录", self)
         btn_out.clicked.connect(self.browse_output_dir)
