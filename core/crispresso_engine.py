@@ -578,19 +578,8 @@ def run_crispresso_batch_pipeline(
                 if log_callback:
                     log_callback(f"[INFO] 样本 {s_name} 的 sgRNA 位于 Amplicon 反向互补链上，已自动修正链方向 (Reverse Complement)！\n")
 
-        if s_sg:
-            sg_l = len(s_sg)
-            if "BE" in mode:
-                # Base Editing mode: plot window strictly covers sgRNA sequence
-                plot_win_arg = 2 * (sg_l + cleavage_offset)
-                quant_win_arg = max(quant_window, sg_l + cleavage_offset)
-            else:
-                # NHEJ / HDR / PE mode: follow user specified parameters
-                plot_win_arg = plot_window
-                quant_win_arg = quant_window
-        else:
-            plot_win_arg = plot_window
-            quant_win_arg = quant_window
+        plot_win_arg = plot_window
+        quant_win_arg = quant_window
 
         if log_callback:
             log_callback(f"\n[{s_idx}/{total_samples}] 正在处理样本: {s_name} ({s_desc})\n")

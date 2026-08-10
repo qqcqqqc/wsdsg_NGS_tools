@@ -193,17 +193,8 @@ class CRISPRessoSingleWorker(QThread):
             if self.r2_path:
                 cmd.extend(["--fastq_r2", win_to_wsl_path(self.r2_path) if is_windows() else self.r2_path])
                 
-            if self.guide:
-                sg_l = len(self.guide)
-                if "BE" in self.mode:
-                    plot_win_arg = 2 * (sg_l + self.cleavage_offset)
-                    quant_win_arg = max(self.quant_window, sg_l + self.cleavage_offset)
-                else:
-                    plot_win_arg = self.plot_window
-                    quant_win_arg = self.quant_window
-            else:
-                plot_win_arg = self.plot_window
-                quant_win_arg = self.quant_window
+            plot_win_arg = self.plot_window
+            quant_win_arg = self.quant_window
 
             cmd.extend([
                 "--amplicon_seq", self.amplicon,
