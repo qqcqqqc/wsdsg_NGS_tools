@@ -476,13 +476,14 @@ class CRISPRessoTab(QWidget):
 
     def show_parameter_help(self):
         msg = (
-            "📖 CRISPResso2 参数说明与窗口化简：\n\n"
-            "传统的 CRISPResso2 命令行需要分别指定“定量窗口”与“绘图显示窗口”，容易导致不同长度 sgRNA（如 16nt vs 23nt）出现截断或显示错位。\n\n"
-            "现已全新重构为统一自适应算法：\n\n"
+            "📖 CRISPResso2 参数详细说明：\n\n"
             "1. 上下游扩展侧翼 (Flanking Window, 默认 10bp):\n"
-            "   系统会自动读取每个样本的真实 sgRNA 长度，并以 sgRNA 为中心向上下游各延伸 10bp 作为统一定量与绘图边界。无论是 16nt 还是 23nt sgRNA，均能 100% 全覆盖包容并画出完整图表。\n\n"
+            "   系统会自动读取每个样本的真实 sgRNA 长度，并以 sgRNA 为中心向 5' 上游和 3' 下游各延伸 10bp 作为统一定量与绘图边界。\n\n"
             "2. 切割偏移 (Cleavage Offset, 默认 -3):\n"
-            "   预计基因切割位点距离 sgRNA 末尾的偏移量（SpCas9 默认 -3，即 PAM 上游 3 个碱基处切割）。\n\n"
+            "   预计基因切割位点距离 sgRNA 末尾的偏移量。此参数需根据所使用的核酸酶类型决定：\n"
+            "   • SpCas9 / ABE / CBE：默认 -3（即 PAM 上游 3 个碱基处切割）。\n"
+            "   • 其他核酸酶（如 Cas12a/Cpf1 等）：需根据其特有的切割位点调整。\n"
+            "   注意：修改切割偏移会直接改变切割中心判定，进而影响 NHEJ 的 wt_allele 及 3n 框移/Indel Reads 的统计结果！\n\n"
             "3. 最小质量分 (Min Read Quality, 默认 30):\n"
             "   低于此 Phred 质量分 (Q30) 的 Reads 将被自动过滤，表示 99.9% 准确率。\n\n"
             "4. 左/右引物屏蔽 (Exclude Left/Right, 默认 15):\n"
