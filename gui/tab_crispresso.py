@@ -282,7 +282,7 @@ class CRISPRessoTab(QWidget):
         main_layout.addWidget(header_box)
 
         # Advanced Optional Parameters Box
-        adv_box = QGroupBox("高级可选参数 (无需修改可保持默认)", self)
+        adv_box = QGroupBox("绘图与数据汇总窗口参数 (默认推荐无需修改)", self)
         adv_layout = QHBoxLayout(adv_box)
 
         adv_layout.addWidget(QLabel("定量窗口:"))

@@ -2,7 +2,8 @@ import os
 from gui.qt_compat import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit,
     QPushButton, QTextEdit, QTableWidget, QTableWidgetItem, QProgressBar,
-    QFileDialog, QMessageBox, QCheckBox, QThread, Signal, Slot
+    QFileDialog, QMessageBox, QCheckBox, QThread, Signal, Slot,
+    DropLineEdit, DropTableWidget
 )
 from core.demux_engine import parse_excel_sample_sheet, run_demux_pipeline
 from core.platform_runner import global_runner
@@ -66,8 +67,8 @@ class DemuxTab(QWidget):
         # Excel sample sheet path
         excel_layout = QHBoxLayout()
         excel_layout.addWidget(QLabel("拆分信息表 (Excel):"))
-        self.txt_excel_path = QLineEdit(self)
-        self.txt_excel_path.setPlaceholderText("选择或拖入 拆分信息.xlsx 表格文件...")
+        self.txt_excel_path = DropLineEdit(filter_type='excel', parent=self)
+        self.txt_excel_path.setPlaceholderText("选择或直接拖入拆分信息.xlsx表格文件...")
         self.txt_excel_path.textChanged.connect(self.load_excel_table)
         excel_layout.addWidget(self.txt_excel_path)
         btn_browse_excel = QPushButton("浏览 Excel...", self)
@@ -78,8 +79,8 @@ class DemuxTab(QWidget):
         # FASTQ input dir
         fq_layout = QHBoxLayout()
         fq_layout.addWidget(QLabel("Raw FASTQ 文件夹:"))
-        self.txt_fastq_dir = QLineEdit(self)
-        self.txt_fastq_dir.setPlaceholderText("选择包含原始 .fastq.gz / .fq.gz 文件的文件夹...")
+        self.txt_fastq_dir = DropLineEdit(filter_type='dir', parent=self)
+        self.txt_fastq_dir.setPlaceholderText("选择或直接拖入原始 FASTQ 文件夹...")
         fq_layout.addWidget(self.txt_fastq_dir)
         btn_browse_fq = QPushButton("选择 FASTQ 目录...", self)
         btn_browse_fq.clicked.connect(self.browse_fastq_dir)
@@ -89,8 +90,8 @@ class DemuxTab(QWidget):
         # Output dir
         out_layout = QHBoxLayout()
         out_layout.addWidget(QLabel("结果输出文件夹:"))
-        self.txt_output_dir = QLineEdit(self)
-        self.txt_output_dir.setPlaceholderText("选择拆分后样本文件的保存目录...")
+        self.txt_output_dir = DropLineEdit(filter_type='dir', parent=self)
+        self.txt_output_dir.setPlaceholderText("选择或直接拖入拆分后样本文件的保存目录...")
         out_layout.addWidget(self.txt_output_dir)
         btn_browse_out = QPushButton("选择输出目录...", self)
         btn_browse_out.clicked.connect(self.browse_output_dir)
@@ -103,7 +104,7 @@ class DemuxTab(QWidget):
         table_box = QGroupBox("2. 样本表配置与预览", self)
         table_layout = QVBoxLayout(table_box)
 
-        self.table = QTableWidget(self)
+        self.table = DropTableWidget(self)
         self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
             "样品名", "描述", "所在样品库 (Pool)",
@@ -112,6 +113,8 @@ class DemuxTab(QWidget):
         self.table.setMaximumHeight(95)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.excel_dropped.connect(self.txt_excel_path.setText)
+        self.table.dir_dropped.connect(self.txt_fastq_dir.setText)
         table_layout.addWidget(self.table)
 
         main_layout.addWidget(table_box)
