@@ -333,6 +333,24 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                 elif 'Alleles_frequency_table_around_sgRNA' in f and f.endswith('.txt'):
                     allele_file = os.path.join(target_dir, f)
 
+        # Auto-detect base_from / base_to from output table or description if not explicitly set in Excel
+        if sg_table_file and os.path.exists(sg_table_file):
+            try:
+                df_sg_head = pd.read_csv(sg_table_file, sep='\t', nrows=1)
+                num_cols = [c for c in df_sg_head.columns if c and c[0] in 'ACGT' and c[1:].isdigit()]
+                if num_cols:
+                    s_base_from = num_cols[0][0]
+                    s_base_to = 'G' if s_base_from == 'A' else 'T' if s_base_from == 'C' else 'A' if s_base_from == 'G' else 'C'
+                    record_be['原始碱基'] = s_base_from
+                    record_be['修改后碱基'] = s_base_to
+            except Exception:
+                pass
+        elif 'ABE' in s_desc.upper() or 'ABE' in s_name.upper():
+            s_base_from = 'A'
+            s_base_to = 'G'
+            record_be['原始碱基'] = s_base_from
+            record_be['修改后碱基'] = s_base_to
+
         # 1. Parse Indel & Frameshift breakdown directly from Alleles_frequency_table_around_sgRNA
         if allele_file and os.path.exists(allele_file):
             try:
