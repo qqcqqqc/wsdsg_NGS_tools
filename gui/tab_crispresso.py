@@ -205,7 +205,7 @@ class CRISPRessoSingleWorker(QThread):
                     from core.crispresso_engine import rc
                     idx_found = amp_clean.find(rc(sg_clean))
                 if idx_found != -1:
-                    be_center_idx = idx_found + be_sg_len // 2
+                    be_center_idx = idx_found + be_sg_len // 2 - 1
 
             cmd.extend([
                 "--amplicon_seq", self.amplicon,

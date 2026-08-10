@@ -589,7 +589,7 @@ def run_crispresso_batch_pipeline(
             if idx_found == -1:
                 idx_found = s_amp_clean.find(rc(s_sg_clean))
             if idx_found != -1:
-                be_center_idx = idx_found + be_sg_len // 2
+                be_center_idx = idx_found + be_sg_len // 2 - 1
 
         if log_callback:
             log_callback(f"\n[{s_idx}/{total_samples}] 正在处理样本: {s_name} ({s_desc})\n")
