@@ -578,20 +578,19 @@ class CRISPRessoTab(QWidget):
 
     def start_analysis(self):
         try:
-            flank = int(self.txt_flank.text().strip())
+            quant_window = int(self.txt_window.text().strip())
             cleavage_offset = int(self.txt_offset.text().strip())
             min_read_qual = int(self.txt_min_qual.text().strip())
             exclude_left = int(self.txt_ex_left.text().strip())
             exclude_right = int(self.txt_ex_right.text().strip())
+            plot_window = int(self.txt_plot_win.text().strip())
         except ValueError:
-            flank = 10
+            quant_window = 10
             cleavage_offset = -3
             min_read_qual = 30
             exclude_left = 15
             exclude_right = 15
-
-        quant_window = flank
-        plot_window = 20 + 2 * flank
+            plot_window = 20
 
         output_dir = self.txt_output_dir.text().strip()
         mode = self.combo_edit_type.currentText()
