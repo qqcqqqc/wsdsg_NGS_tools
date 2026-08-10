@@ -52,11 +52,12 @@ class DropLineEdit(QLineEdit):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             if urls:
-                path = urls[0].toLocalFile()
-                if self.filter_type == 'excel' and (path.endswith('.xlsx') or path.endswith('.xls')):
+                path = urls[0].toLocalFile().strip()
+                p_lower = path.lower()
+                if self.filter_type == 'excel' and (p_lower.endswith('.xlsx') or p_lower.endswith('.xls') or p_lower.endswith('.csv')):
                     event.acceptProposedAction()
                     return
-                elif self.filter_type == 'dir' and os.path.isdir(path):
+                elif self.filter_type == 'dir' and (os.path.isdir(path) or os.path.isfile(path)):
                     event.acceptProposedAction()
                     return
                 elif self.filter_type in ['file', 'any'] and os.path.exists(path):
@@ -68,7 +69,9 @@ class DropLineEdit(QLineEdit):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             if urls:
-                path = os.path.abspath(urls[0].toLocalFile())
+                path = os.path.abspath(urls[0].toLocalFile().strip())
+                if self.filter_type == 'dir' and os.path.isfile(path):
+                    path = os.path.dirname(path)
                 self.setText(path)
                 self.file_dropped.emit(path)
                 event.acceptProposedAction()
@@ -86,8 +89,9 @@ class DropTableWidget(QTableWidget):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             if urls:
-                path = urls[0].toLocalFile()
-                if path.endswith('.xlsx') or path.endswith('.xls') or os.path.isdir(path):
+                path = urls[0].toLocalFile().strip()
+                p_lower = path.lower()
+                if p_lower.endswith('.xlsx') or p_lower.endswith('.xls') or p_lower.endswith('.csv') or os.path.isdir(path) or os.path.isfile(path):
                     event.acceptProposedAction()
                     return
         event.ignore()
@@ -96,11 +100,16 @@ class DropTableWidget(QTableWidget):
         if event.mimeData().hasUrls():
             urls = event.mimeData().urls()
             if urls:
-                path = os.path.abspath(urls[0].toLocalFile())
-                if path.endswith('.xlsx') or path.endswith('.xls'):
+                path = os.path.abspath(urls[0].toLocalFile().strip())
+                p_lower = path.lower()
+                if p_lower.endswith('.xlsx') or p_lower.endswith('.xls') or p_lower.endswith('.csv'):
                     self.excel_dropped.emit(path)
                     event.acceptProposedAction()
                 elif os.path.isdir(path):
                     self.dir_dropped.emit(path)
                     event.acceptProposedAction()
+                elif os.path.isfile(path):
+                    self.dir_dropped.emit(os.path.dirname(path))
+                    event.acceptProposedAction()
+
 

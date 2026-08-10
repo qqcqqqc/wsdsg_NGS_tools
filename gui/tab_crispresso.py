@@ -257,7 +257,40 @@ class CRISPRessoTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.worker = None
+        self.setAcceptDrops(True)
         self.init_ui()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = os.path.abspath(urls[0].toLocalFile().strip())
+                p_lower = path.lower()
+                if p_lower.endswith('.xlsx') or p_lower.endswith('.xls') or p_lower.endswith('.csv'):
+                    self.txt_batch_excel.setText(path)
+                    event.acceptProposedAction()
+                elif os.path.isdir(path):
+                    if not self.txt_batch_fq.text().strip():
+                        self.txt_batch_fq.setText(path)
+                    else:
+                        self.txt_output_dir.setText(path)
+                    event.acceptProposedAction()
+                elif os.path.isfile(path):
+                    if not self.txt_r1.text().strip():
+                        self.txt_r1.setText(path)
+                    elif not self.txt_r2.text().strip():
+                        self.txt_r2.setText(path)
+                    else:
+                        self.txt_batch_fq.setText(os.path.dirname(path))
+                    event.acceptProposedAction()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
