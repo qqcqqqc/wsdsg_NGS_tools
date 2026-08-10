@@ -282,14 +282,14 @@ class CRISPRessoTab(QWidget):
         main_layout.addWidget(header_box)
 
         # Advanced Optional Parameters Box
-        adv_box = QGroupBox("绘图与数据汇总窗口参数 (默认推荐无需修改)", self)
+        adv_box = QGroupBox("绘图与定量扩展参数 (默认推荐无需修改)", self)
         adv_layout = QHBoxLayout(adv_box)
 
-        adv_layout.addWidget(QLabel("定量窗口:"))
-        self.txt_window = QLineEdit("10", self)
-        self.txt_window.setMaximumWidth(40)
-        self.txt_window.setToolTip("定量窗口：软件已实现自动根据 sgRNA 长度延伸全覆盖，填 10 为基准窗口。")
-        adv_layout.addWidget(self.txt_window)
+        adv_layout.addWidget(QLabel("上下游扩展侧翼(bp):"))
+        self.txt_flank = QLineEdit("10", self)
+        self.txt_flank.setMaximumWidth(40)
+        self.txt_flank.setToolTip("以完整 sgRNA 序列为中心，向 5' 上游和 3' 下游各额外扩展的 bp 范围（默认上下游各 10bp，全 sgRNA 动态包容）。")
+        adv_layout.addWidget(self.txt_flank)
 
         adv_layout.addWidget(QLabel("切割偏移:"))
         self.txt_offset = QLineEdit("-3", self)
@@ -311,12 +311,6 @@ class CRISPRessoTab(QWidget):
         self.txt_ex_right = QLineEdit("15", self)
         self.txt_ex_right.setMaximumWidth(40)
         adv_layout.addWidget(self.txt_ex_right)
-
-        adv_layout.addWidget(QLabel("绘图显示窗口(bp):"))
-        self.txt_plot_win = QLineEdit("20", self)
-        self.txt_plot_win.setMaximumWidth(40)
-        self.txt_plot_win.setToolTip("绘图显示窗口：已升级为自动按 sgRNA 长度自适应 (涵盖 sgRNA -10nt ~ sgRNA +10nt)，填 20 为保底最小值。")
-        adv_layout.addWidget(self.txt_plot_win)
 
         btn_help_params = QPushButton("💡 参数说明", self)
         btn_help_params.setStyleSheet("background-color: #0288d1; color: white; padding: 2px 8px;")
@@ -449,17 +443,17 @@ class CRISPRessoTab(QWidget):
 
     def show_parameter_help(self):
         msg = (
-            "📖 CRISPResso2 高级参数说明：\n\n"
-            "1. 定量窗口 (Quantification Window Size, 默认 10):\n"
-            "   以预计切割位点为中心，向左右延伸统计突变的核苷酸宽度。\n\n"
+            "📖 CRISPResso2 参数说明与窗口化简：\n\n"
+            "传统的 CRISPResso2 命令行需要分别指定“定量窗口”与“绘图显示窗口”，容易导致不同长度 sgRNA（如 16nt vs 23nt）出现截断或显示错位。\n\n"
+            "现已全新重构为统一自适应算法：\n\n"
+            "1. 上下游扩展侧翼 (Flanking Window, 默认 10bp):\n"
+            "   系统会自动读取每个样本的真实 sgRNA 长度，并以 sgRNA 为中心向上下游各延伸 10bp 作为统一定量与绘图边界。无论是 16nt 还是 23nt sgRNA，均能 100% 全覆盖包容并画出完整图表。\n\n"
             "2. 切割偏移 (Cleavage Offset, 默认 -3):\n"
-            "   预计基因切割位点距离 sgRNA 末尾的偏移量（SpCas9 默认 -3，即 PAM 上游 3 个碱基切开）。\n\n"
+            "   预计基因切割位点距离 sgRNA 末尾的偏移量（SpCas9 默认 -3，即 PAM 上游 3 个碱基处切割）。\n\n"
             "3. 最小质量分 (Min Read Quality, 默认 30):\n"
-            "   低于此 Phred 质量分 (Q30) 的 Reads 将被自动过滤。测序质量一般时可降至 20。\n\n"
-            "4. 左/右引物屏蔽 (Exclude BP From Left/Right, 默认 15):\n"
-            "   屏蔽 Amplicon 两端 PCR 引物结合区的碱基，防止引物合成低质量错配影响编辑统计。\n\n"
-            "5. 绘图显示窗口 (Plot Window Size, 默认 20):\n"
-            "   控制生成的热图及 HTML 可视化报告中展示的左右碱基宽度范围。"
+            "   低于此 Phred 质量分 (Q30) 的 Reads 将被自动过滤，表示 99.9% 准确率。\n\n"
+            "4. 左/右引物屏蔽 (Exclude Left/Right, 默认 15):\n"
+            "   屏蔽 Amplicon 两端 PCR 引物结合区的碱基，防止引物合成低质量错配影响编辑统计。"
         )
         QMessageBox.information(self, "参数详细说明", msg)
 
@@ -544,19 +538,20 @@ class CRISPRessoTab(QWidget):
 
     def start_analysis(self):
         try:
-            quant_window = int(self.txt_window.text().strip())
+            flank = int(self.txt_flank.text().strip())
             cleavage_offset = int(self.txt_offset.text().strip())
             min_read_qual = int(self.txt_min_qual.text().strip())
             exclude_left = int(self.txt_ex_left.text().strip())
             exclude_right = int(self.txt_ex_right.text().strip())
-            plot_window = int(self.txt_plot_win.text().strip())
         except ValueError:
-            quant_window = 10
+            flank = 10
             cleavage_offset = -3
             min_read_qual = 30
             exclude_left = 15
             exclude_right = 15
-            plot_window = 20
+
+        quant_window = flank
+        plot_window = 20 + 2 * flank
 
         output_dir = self.txt_output_dir.text().strip()
         mode = self.combo_edit_type.currentText()
