@@ -578,8 +578,18 @@ def run_crispresso_batch_pipeline(
                 if log_callback:
                     log_callback(f"[INFO] 样本 {s_name} 的 sgRNA 位于 Amplicon 反向互补链上，已自动修正链方向 (Reverse Complement)！\n")
 
-        plot_win_arg = plot_window
-        quant_win_arg = quant_window
+        is_be_mode = ("BE" in mode or mode == "Base Editing (BE)")
+
+        be_center_idx = None
+        be_sg_len = len(s_sg) if s_sg else 20
+        if is_be_mode and s_sg and s_amp:
+            s_sg_clean = s_sg.strip().upper()
+            s_amp_clean = s_amp.strip().upper()
+            idx_found = s_amp_clean.find(s_sg_clean)
+            if idx_found == -1:
+                idx_found = s_amp_clean.find(rc(s_sg_clean))
+            if idx_found != -1:
+                be_center_idx = idx_found + be_sg_len // 2
 
         if log_callback:
             log_callback(f"\n[{s_idx}/{total_samples}] 正在处理样本: {s_name} ({s_desc})\n")
@@ -604,16 +614,27 @@ def run_crispresso_batch_pipeline(
             "--amplicon_seq", s_amp,
             "--guide_seq", s_sg,
             "--output_folder", win_to_wsl_path(sample_out_dir) if is_windows() else sample_out_dir,
-            "--quantification_window_size", str(quant_win_arg),
-            "--cleavage_offset", str(cleavage_offset),
             "--min_average_read_quality", str(min_read_qual),
             "--exclude_bp_from_left", str(exclude_left),
             "--exclude_bp_from_right", str(exclude_right),
-            "--plot_window_size", str(plot_win_arg),
             "--n_processes", str(threads)
         ])
 
-        if mode == "Base Editing (BE)":
+        if is_be_mode and be_center_idx is not None:
+            cmd.extend([
+                "--quantification_window_center", str(be_center_idx),
+                "--cleavage_offset", "0",
+                "--plot_window_size", str(be_sg_len),
+                "--quantification_window_size", str(be_sg_len)
+            ])
+        else:
+            cmd.extend([
+                "--quantification_window_size", str(quant_window),
+                "--cleavage_offset", str(cleavage_offset),
+                "--plot_window_size", str(plot_window)
+            ])
+
+        if is_be_mode:
             cmd.append("--base_editor_output")
             if s_base_from and s_base_to:
                 cmd.extend(["--conversion_nuc_from", s_base_from, "--conversion_nuc_to", s_base_to])

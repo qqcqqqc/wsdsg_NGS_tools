@@ -193,22 +193,44 @@ class CRISPRessoSingleWorker(QThread):
             if self.r2_path:
                 cmd.extend(["--fastq_r2", win_to_wsl_path(self.r2_path) if is_windows() else self.r2_path])
                 
-            plot_win_arg = self.plot_window
-            quant_win_arg = self.quant_window
+            is_be_mode = ("BE" in self.mode or self.mode == "Base Editing (BE)")
+
+            be_center_idx = None
+            be_sg_len = len(self.guide) if self.guide else 20
+            if is_be_mode and self.guide and self.amplicon:
+                sg_clean = self.guide.strip().upper()
+                amp_clean = self.amplicon.strip().upper()
+                idx_found = amp_clean.find(sg_clean)
+                if idx_found == -1:
+                    from core.crispresso_engine import rc
+                    idx_found = amp_clean.find(rc(sg_clean))
+                if idx_found != -1:
+                    be_center_idx = idx_found + be_sg_len // 2
 
             cmd.extend([
                 "--amplicon_seq", self.amplicon,
                 "--guide_seq", self.guide,
                 "--output_folder", win_to_wsl_path(self.output_dir) if is_windows() else self.output_dir,
-                "--quantification_window_size", str(quant_win_arg),
-                "--cleavage_offset", str(self.cleavage_offset),
                 "--min_average_read_quality", str(self.min_read_qual),
                 "--exclude_bp_from_left", str(self.exclude_left),
-                "--exclude_bp_from_right", str(self.exclude_right),
-                "--plot_window_size", str(plot_win_arg)
+                "--exclude_bp_from_right", str(self.exclude_right)
             ])
-            
-            if self.mode == "Base Editing (BE)":
+
+            if is_be_mode and be_center_idx is not None:
+                cmd.extend([
+                    "--quantification_window_center", str(be_center_idx),
+                    "--cleavage_offset", "0",
+                    "--plot_window_size", str(be_sg_len),
+                    "--quantification_window_size", str(be_sg_len)
+                ])
+            else:
+                cmd.extend([
+                    "--quantification_window_size", str(self.quant_window),
+                    "--cleavage_offset", str(self.cleavage_offset),
+                    "--plot_window_size", str(self.plot_window)
+                ])
+
+            if is_be_mode:
                 cmd.append("--base_editor_output")
             elif self.mode in ["HDR", "Prime Editing (PE)"] and self.hdr_donor:
                 cmd.extend(["--expected_hdr_amplicon_seq", self.hdr_donor])
