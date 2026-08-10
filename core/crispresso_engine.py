@@ -580,12 +580,14 @@ def run_crispresso_batch_pipeline(
 
         if s_sg:
             sg_l = len(s_sg)
-            required_half_w = max(sg_l + cleavage_offset + 10, 15 - cleavage_offset)
-            calc_plot_win = 2 * required_half_w
-            plot_win_arg = max(plot_window, calc_plot_win)
-            
-            required_quant_half = max(sg_l + cleavage_offset + 5, 12 - cleavage_offset)
-            quant_win_arg = max(quant_window, required_quant_half)
+            if "BE" in mode:
+                # Base Editing mode: plot window strictly covers sgRNA sequence
+                plot_win_arg = 2 * (sg_l + cleavage_offset)
+                quant_win_arg = max(quant_window, sg_l + cleavage_offset)
+            else:
+                # NHEJ / HDR / PE mode: follow user specified parameters
+                plot_win_arg = plot_window
+                quant_win_arg = quant_window
         else:
             plot_win_arg = plot_window
             quant_win_arg = quant_window

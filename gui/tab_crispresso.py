@@ -195,12 +195,12 @@ class CRISPRessoSingleWorker(QThread):
                 
             if self.guide:
                 sg_l = len(self.guide)
-                required_half_w = max(sg_l + self.cleavage_offset + 10, 15 - self.cleavage_offset)
-                calc_plot_win = 2 * required_half_w
-                plot_win_arg = max(self.plot_window, calc_plot_win)
-
-                required_quant_half = max(sg_l + self.cleavage_offset + 5, 12 - self.cleavage_offset)
-                quant_win_arg = max(self.quant_window, required_quant_half)
+                if "BE" in self.mode:
+                    plot_win_arg = 2 * (sg_l + self.cleavage_offset)
+                    quant_win_arg = max(self.quant_window, sg_l + self.cleavage_offset)
+                else:
+                    plot_win_arg = self.plot_window
+                    quant_win_arg = self.quant_window
             else:
                 plot_win_arg = self.plot_window
                 quant_win_arg = self.quant_window
@@ -315,14 +315,14 @@ class CRISPRessoTab(QWidget):
         main_layout.addWidget(header_box)
 
         # Advanced Optional Parameters Box
-        adv_box = QGroupBox("绘图与定量扩展参数 (默认推荐无需修改)", self)
+        adv_box = QGroupBox("高级可选参数 (无需修改可保持默认)", self)
         adv_layout = QHBoxLayout(adv_box)
 
-        adv_layout.addWidget(QLabel("上下游扩展侧翼(bp):"))
-        self.txt_flank = QLineEdit("10", self)
-        self.txt_flank.setMaximumWidth(40)
-        self.txt_flank.setToolTip("以完整 sgRNA 序列为中心，向 5' 上游和 3' 下游各额外扩展的 bp 范围（默认上下游各 10bp，全 sgRNA 动态包容）。")
-        adv_layout.addWidget(self.txt_flank)
+        adv_layout.addWidget(QLabel("定量窗口:"))
+        self.txt_window = QLineEdit("10", self)
+        self.txt_window.setMaximumWidth(40)
+        self.txt_window.setToolTip("定量窗口：用于设定突变/切口分析宽度。NHEJ 模式按此设定生效，BE 模式自动包含 sgRNA。")
+        adv_layout.addWidget(self.txt_window)
 
         adv_layout.addWidget(QLabel("切割偏移:"))
         self.txt_offset = QLineEdit("-3", self)
@@ -344,6 +344,12 @@ class CRISPRessoTab(QWidget):
         self.txt_ex_right = QLineEdit("15", self)
         self.txt_ex_right.setMaximumWidth(40)
         adv_layout.addWidget(self.txt_ex_right)
+
+        adv_layout.addWidget(QLabel("绘图显示窗口(bp):"))
+        self.txt_plot_win = QLineEdit("20", self)
+        self.txt_plot_win.setMaximumWidth(40)
+        self.txt_plot_win.setToolTip("绘图显示窗口：NHEJ/HDR 模式按此设定值绘图（默认 20bp），BE 模式自动限制为只绘制 sgRNA 序列。")
+        adv_layout.addWidget(self.txt_plot_win)
 
         btn_help_params = QPushButton("💡 参数说明", self)
         btn_help_params.setStyleSheet("background-color: #0288d1; color: white; padding: 2px 8px;")
