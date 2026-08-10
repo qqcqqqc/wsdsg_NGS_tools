@@ -1,6 +1,7 @@
 """
 Qt compatibility layer supporting PySide6 (preferred) and PyQt5 (fallback).
 """
+import os
 import sys
 
 try:
