@@ -196,9 +196,9 @@ def process_nhej_cleavage_file(filepath: str, sample_name: str) -> Dict[str, Any
         "3n+1_del": n_d1, "3n+2_del": n_d2, "3n_del": n_d3,
         "3n+1_insert": n_i1, "3n+2_insert": n_i2, "3n_insert": n_i3,
         "Substitutions": n_sub,
-        "%TotalIndels": pct_total,
-        "%Indels_non3n": pct_non3n,
-        "indels_without_subs%": pct_without_subs,
+        "TotalIndels": pct_total,
+        "Indels_non3n": pct_non3n,
+        "Indels_without_subs": pct_without_subs,
     }
 
 def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
@@ -238,7 +238,7 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         df_res = pd.DataFrame(results)
         cols = ["Sample", "描述", "wt_allele", "3n+1_del", "3n+2_del", "3n_del",
                 "3n+1_insert", "3n+2_insert", "3n_insert", "Substitutions",
-                "%TotalIndels", "%Indels_non3n", "indels_without_subs%"]
+                "TotalIndels", "Indels_non3n", "Indels_without_subs"]
         existing_cols = [c for c in cols if c in df_res.columns]
         df_res = df_res[existing_cols]
         
@@ -246,7 +246,7 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
             with pd.ExcelWriter(outpath, engine='openpyxl') as writer:
                 df_res.to_excel(writer, index=False, sheet_name="NHEJ Summary")
                 ws = writer.sheets["NHEJ Summary"]
-                pct_cols = ["%TotalIndels", "%Indels_non3n", "indels_without_subs%"]
+                pct_cols = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
                 col_indices = [df_res.columns.get_loc(c) + 1 for c in pct_cols if c in df_res.columns]
                 for row in range(2, len(df_res) + 2):
                     for col_idx in col_indices:
@@ -304,9 +304,9 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
             '3n+1_del': 0, '3n+2_del': 0, '3n_del': 0,
             '3n+1_insert': 0, '3n+2_insert': 0, '3n_insert': 0,
             'Substitutions': 0,
-            '%TotalIndels': 0.0,
-            '%Indels_non3n': 0.0,
-            'indels_without_subs%': 0.0
+            'TotalIndels': 0.0,
+            'Indels_non3n': 0.0,
+            'Indels_without_subs': 0.0
         }
 
         if not os.path.exists(sample_dir):
@@ -480,7 +480,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         df_indel = pd.DataFrame(records_indel)
         indel_cols = ["Sample", "描述", "wt_allele", "3n+1_del", "3n+2_del", "3n_del",
                       "3n+1_insert", "3n+2_insert", "3n_insert", "Substitutions",
-                      "%TotalIndels", "%Indels_non3n", "indels_without_subs%"]
+                      "TotalIndels", "Indels_non3n", "Indels_without_subs"]
         existing_ind_cols = [c for c in indel_cols if c in df_indel.columns]
         df_indel = df_indel[existing_ind_cols]
 
@@ -500,7 +500,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                 # Write Sheet 2: BE Indel & Frameshift Breakdown
                 df_indel.to_excel(writer, index=False, sheet_name="BE Indel与移码分析")
                 ws_ind = writer.sheets["BE Indel与移码分析"]
-                percentage_ind_cols = ["%TotalIndels", "%Indels_non3n", "indels_without_subs%"]
+                percentage_ind_cols = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
                 col_ind_indices = [df_indel.columns.get_loc(c) + 1 for c in percentage_ind_cols if c in df_indel.columns]
                 for row in range(2, len(df_indel) + 2):
                     for col_idx in col_ind_indices:
