@@ -594,13 +594,12 @@ class CRISPRessoTab(QWidget):
             # Optional / Mode specific warnings
             if "BE" in mode_text and (not has_base_from or not has_base_to):
                 msg = (
-                    "💡 温馨俏皮小提示 😉\n\n"
                     "捕捉到您正在使用 BE 碱基编辑模式~\n"
                     "检测到当前表格里缺少【原始碱基】或【修改后碱基】列哦！\n"
                     "小助手已贴心替您暂存为默认的 C ➔ T 分析啦！\n\n"
-                    "（小贴士：如果实际是 A ➔ G 变异，建议在表格中加这两列；或者去体验【CQL 专属一体化】偷懒神器，能自动按 ABE/CBE 描述识别哦 😉）"
+                    "（小贴士：如果实际是 A ➔ G 变异，记得在表格中加入这两列哦~）"
                 )
-                QMessageBox.information(self, "缺少碱基列提示 😉", msg)
+                QMessageBox.information(self, "😄😄😄", msg)
 
             elif ("HDR" in mode_text or "PE" in mode_text) and not has_donor:
                 msg = (
