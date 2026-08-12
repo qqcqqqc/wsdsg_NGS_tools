@@ -561,12 +561,66 @@ class CRISPRessoTab(QWidget):
         if path:
             self.txt_output_dir.setText(path)
 
+    def check_crispresso_excel_columns(self, path: str):
+        try:
+            df = pd.read_excel(path, nrows=2)
+            cols = [str(c).strip() for c in df.columns]
+
+            has_name = any('样品' in c or 'sample' in c.lower() for c in cols)
+            has_sg = any('sg' in c.lower() or 'grna' in c.lower() or 'guide' in c.lower() for c in cols)
+            has_amp = any(('原始序列' in c or '扩增子' in c or 'amplicon' in c.lower() or '序列' in c) and '索引' not in c for c in cols)
+            has_base_from = any('原始碱基' in c or ('from' in c.lower() and 'base' in c.lower()) for c in cols)
+            has_base_to = any('修改后碱基' in c or ('to' in c.lower() and 'base' in c.lower()) for c in cols)
+            has_donor = any('供体' in c or 'donor' in c.lower() or 'pe' in c.lower() or 'hdr' in c.lower() for c in cols)
+
+            mode_text = self.combo_edit_type.currentText()
+
+            # Required columns warning
+            missing_req = []
+            if not has_name: missing_req.append("【样品名 / Sample】")
+            if not has_sg: missing_req.append("【sg / sgRNA】")
+            if not has_amp: missing_req.append("【原始序列 / 扩增子】")
+
+            if missing_req:
+                msg = (
+                    "🙈 粗心小提示 😉\n\n"
+                    f"小助手检查到您的表格好像缺少以下核心列哦：\n"
+                    + "\n".join(f"  • {col}" for col in missing_req) +
+                    "\n\n没有它们小助手无法精准定位比对啦！快去检查补充一下表头命名吧~ 😜"
+                )
+                QMessageBox.warning(self, "缺少关键列提示 😉", msg)
+                return
+
+            # Optional / Mode specific warnings
+            if "BE" in mode_text and (not has_base_from or not has_base_to):
+                msg = (
+                    "💡 温馨俏皮小提示 😉\n\n"
+                    "捕捉到您正在使用 BE 碱基编辑模式~\n"
+                    "检测到当前表格里缺少【原始碱基】或【修改后碱基】列哦！\n"
+                    "小助手已贴心替您暂存为默认的 C ➔ T 分析啦！\n\n"
+                    "（小贴士：如果实际是 A ➔ G 变异，建议在表格中加这两列；或者去体验【CQL 专属一体化】偷懒神器，能自动按 ABE/CBE 描述识别哦 😉）"
+                )
+                QMessageBox.information(self, "缺少碱基列提示 😉", msg)
+
+            elif ("HDR" in mode_text or "PE" in mode_text) and not has_donor:
+                msg = (
+                    "💡 温馨俏皮小提示 😉\n\n"
+                    "观察到您选了 HDR / PE 模式~\n"
+                    "表格里好像缺少【供体序列 / Donor】列哦！\n"
+                    "如果是 HDR 重组插入，记得加上 Donor 序列表头，才能更精准比对同源重组效率哦~ 😉"
+                )
+                QMessageBox.information(self, "缺少供体列提示 😉", msg)
+
+        except Exception:
+            pass
+
     def load_batch_excel(self):
         path = self.txt_batch_excel.text().strip()
         if not path or not os.path.exists(path):
             self.table_batch.setRowCount(0)
             return
         try:
+            self.check_crispresso_excel_columns(path)
             samples = parse_crispresso_sample_sheet(path)
             self.table_batch.setRowCount(0)
             mode_text = self.combo_edit_type.currentText()

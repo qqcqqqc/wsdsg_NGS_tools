@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from gui.qt_compat import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit,
     QPushButton, QTextEdit, QProgressBar, QFileDialog, QMessageBox, QThread, Signal, Slot
@@ -128,6 +129,37 @@ class CQLDialog(QDialog):
         if path:
             self.txt_fastq.setText(path)
 
+    def check_cql_excel_columns(self, path: str):
+        try:
+            df = pd.read_excel(path, nrows=2)
+            cols = [str(c).strip() for c in df.columns]
+
+            has_name = any('样品' in c or 'sample' in c.lower() for c in cols)
+            has_desc = any('描述' in c or 'desc' in c.lower() for c in cols)
+            has_idx1 = any('索引1' in c or 'idx1' in c.lower() or 'index1' in c.lower() or '索引序列1' in c for c in cols)
+            has_idx2 = any('索引2' in c or 'idx2' in c.lower() or 'index2' in c.lower() or '索引序列2' in c for c in cols)
+            has_sg = any('sg' in c.lower() or 'grna' in c.lower() or 'guide' in c.lower() for c in cols)
+            has_amp = any(('原始序列' in c or '扩增子' in c or 'amplicon' in c.lower() or '序列' in c) and '索引' not in c for c in cols)
+
+            missing = []
+            if not has_name: missing.append("【样品名】")
+            if not has_desc: missing.append("【描述】(识别 ABE/CBE/CUT 前缀)")
+            if not has_idx1: missing.append("【索引序列1】")
+            if not has_idx2: missing.append("【索引序列2】")
+            if not has_sg: missing.append("【sg】")
+            if not has_amp: missing.append("【原始序列 / 扩增子】")
+
+            if missing:
+                msg = (
+                    "🎉 欢迎使用 CQL 专属福利一体化！😉\n\n"
+                    "小助手检测到您的 CQL 表格好像缺少以下列哦：\n"
+                    + "\n".join(f"  • {col}" for col in missing) +
+                    "\n\n为保证全自动拆分与 ABE/CBE/CUT 模式路由顺畅，建议对照标准的 7 列表头（样品名, 描述, 所在样品库, 索引序列1, 索引序列2, sg, 原始序列）补充完整哦！😉"
+                )
+                QMessageBox.warning(self, "CQL 表格表头提示 😉", msg)
+        except Exception:
+            pass
+
     def start_cql_pipeline(self):
         excel_path = self.txt_excel.text().strip()
         fastq_dir = self.txt_fastq.text().strip()
@@ -139,6 +171,8 @@ class CQLDialog(QDialog):
         if not fastq_dir or not os.path.exists(fastq_dir):
             QMessageBox.warning(self, "输入错误", "请选择包含原始 FASTQ 文件的目录！")
             return
+
+        self.check_cql_excel_columns(excel_path)
 
         # Auto-place output directory in the same folder as raw FASTQ directory
         output_dir = os.path.join(fastq_dir, "CQL_Pipeline_Output")

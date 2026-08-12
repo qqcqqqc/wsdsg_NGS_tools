@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from gui.qt_compat import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit,
     QPushButton, QTextEdit, QTableWidget, QTableWidgetItem, QProgressBar,
@@ -222,6 +223,40 @@ class DemuxTab(QWidget):
         if path:
             self.txt_output_dir.setText(path)
 
+    def check_demux_excel_columns(self, path: str):
+        try:
+            df = pd.read_excel(path, nrows=2)
+            cols = [str(c).strip() for c in df.columns]
+
+            has_name = any('样品' in c or 'sample' in c.lower() for c in cols)
+            has_idx1 = any('索引1' in c or 'idx1' in c.lower() or 'index1' in c.lower() or '索引序列1' in c for c in cols)
+            has_idx2 = any('索引2' in c or 'idx2' in c.lower() or 'index2' in c.lower() or '索引序列2' in c for c in cols)
+            has_pool = any('库' in c or 'pool' in c.lower() or 'library' in c.lower() for c in cols)
+
+            if not has_name or not has_idx1 or not has_idx2:
+                missing = []
+                if not has_name: missing.append("【样品名 / Sample】")
+                if not has_idx1: missing.append("【索引序列1 / Index1】")
+                if not has_idx2: missing.append("【索引序列2 / Index2】")
+
+                msg = (
+                    "🕵️ 索引迷航警告 😉\n\n"
+                    "拆分表格里找不到以下重要列哦：\n"
+                    + "\n".join(f"  • {col}" for col in missing) +
+                    "\n\n没有 UDI 双端索引序列，机器没办法帮您把 FASTQ 库切开啦！快去补充表头吧~ 😉"
+                )
+                QMessageBox.warning(self, "拆分表格表头提示 😉", msg)
+
+            elif not has_pool:
+                msg = (
+                    "💡 温馨小提示 😉\n\n"
+                    "拆分表格里没有包含【所在样品库 / Pool】列哦！\n"
+                    "小助手会默认当作单样品库处理分发掉~"
+                )
+                QMessageBox.information(self, "表头小提示 😉", msg)
+        except Exception:
+            pass
+
     def load_excel_table(self):
         path = self.txt_excel_path.text().strip()
         if not path or not os.path.exists(path):
@@ -229,6 +264,7 @@ class DemuxTab(QWidget):
             return
 
         try:
+            self.check_demux_excel_columns(path)
             lib_samples = parse_excel_sample_sheet(path)
             self.table.setRowCount(0)
             for lib, samples in lib_samples.items():
