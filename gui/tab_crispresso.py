@@ -599,7 +599,7 @@ class CRISPRessoTab(QWidget):
                     "小助手已贴心替您暂存为默认的 C ➔ T 分析啦！\n\n"
                     "（小贴士：如果实际是 A ➔ G 变异，记得在表格中加入这两列哦~）"
                 )
-                QMessageBox.information(self, "😄😄😄", msg)
+                QMessageBox.information(self, "😉😉😉", msg)
 
             elif ("HDR" in mode_text or "PE" in mode_text) and not has_donor:
                 msg = (
