@@ -297,16 +297,100 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str, log_cal
         df_empty.to_excel(outpath, index=False)
         return outpath
 
+def get_sub_byproduct_bases(base_from: str, base_to: str) -> Tuple[str, str]:
+    """Get the two secondary byproduct mutation bases given base_from and base_to."""
+    bf = base_from.upper() if base_from in 'ACGT' else 'A'
+    bt = base_to.upper()
+    all_other = [b for b in ['A', 'C', 'G', 'T'] if b != bf]
+    if bt in all_other:
+        rem = [b for b in all_other if b != bt]
+        return rem[0], rem[1]
+    else:
+        to_bases = IUPAC_DNA_MAP.get(bt, set()) - {bf}
+        if len(to_bases) >= 2:
+            lst = sorted(list(to_bases))
+            return lst[0], lst[1]
+        else:
+            return all_other[0], all_other[1]
+
+def extract_single_be_record(
+    s_name: str,
+    s_desc: str,
+    s_sg: str,
+    target_from: str,
+    target_to: str,
+    df_sg: Optional[pd.DataFrame],
+    df_sub: Optional[pd.DataFrame],
+    offset: Optional[int]
+) -> Dict[str, Any]:
+    """Extract a single BE efficiency record for a specific target_from -> target_to pair."""
+    sg_len = len(s_sg) if s_sg else 20
+    rec: Dict[str, Any] = {
+        '样品名': s_name,
+        '描述': s_desc,
+        '原始碱基': target_from,
+        '修改后碱基': target_to,
+        '测序深度': 0
+    }
+    for p in range(1, sg_len + 1):
+        rec[p] = None
+        rec[f"u{p}"] = 0.0
+
+    tf_clean = target_from.strip().upper() if target_from else 'A'
+    tt_clean = target_to.strip().upper() if target_to else 'G'
+    from_bases = IUPAC_DNA_MAP.get(tf_clean, {tf_clean})
+    to_bases = IUPAC_DNA_MAP.get(tt_clean, {tt_clean})
+    target_bases = to_bases - from_bases if (to_bases - from_bases) else to_bases
+    unspec_bases = {'A', 'C', 'G', 'T'} - from_bases - to_bases
+
+    if df_sg is not None and offset is not None:
+        for col in df_sg.columns:
+            col_base = col[0] if len(col) > 1 and col[1:].isdigit() else None
+            if col_base and (col_base in from_bases or col_base == tf_clean) and col[1:].isdigit():
+                K = int(col[1:])
+                sg_pos = K + offset
+                if 1 <= sg_pos <= sg_len and (not s_sg or s_sg[sg_pos - 1] in from_bases):
+                    col_series = df_sg[col]
+                    all_reads = pd.to_numeric(col_series, errors='coerce').sum()
+                    if all_reads > 0:
+                        rec['测序深度'] = int(all_reads)
+                        target_reads = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in target_bases if b in BASE_ROW_MAP)
+                        eff_ratio = target_reads / float(all_reads)
+                        rec[sg_pos] = eff_ratio
+
+    if df_sub is not None and offset is not None:
+        total_depth = rec['测序深度']
+        for pos in range(1, sg_len + 1):
+            col_idx = pos - offset
+            if 0 <= col_idx < len(df_sub.columns) and total_depth > 0:
+                col_series = pd.to_numeric(df_sub.iloc[:, col_idx], errors='coerce').fillna(0)
+                unspec_cnt = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in unspec_bases if b in BASE_ROW_MAP)
+                if unspec_cnt < 0:
+                    unspec_cnt = 0
+                unspec_ratio = unspec_cnt / float(total_depth)
+                rec[f"u{pos}"] = unspec_ratio
+            else:
+                rec[f"u{pos}"] = 0.0
+
+    return rec
+
 def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callback: Optional[Callable[[str], None]] = None) -> str:
     """
-    Summarize BE results dynamically matching sgRNA length (1..N and u1..uN).
-    - Supports arbitrary ATCG and any degenerate IUPAC DNA letter codes (R, Y, S, W, K, M, B, D, H, V, N).
-    - Sheet 1: BE Base Editing Window Efficiencies (1..N & u1..uN).
-    - Sheet 2: BE Indel & Frameshift Breakdown.
+    Summarize BE results with 4 sheets:
+    - Sheet 1: BE 目标编辑效率 (主) (e.g. User target A -> G / A -> K)
+    - Sheet 2: BE 副产物突变 1 (副) (e.g. Byproduct A -> C)
+    - Sheet 3: BE 副产物突变 2 (副) (e.g. Byproduct A -> T)
+    - Sheet 4: BE Indel与移码分析 (副) (Indel breakdown)
     """
-    records_be = []
+    records_be_main = []
+    records_be_sub1 = []
+    records_be_sub2 = []
     records_indel = []
     max_sg_len = 20
+
+    main_from_to_pairs = set()
+    sub1_from_to_pairs = set()
+    sub2_from_to_pairs = set()
 
     for s in samples:
         s_name = s['name']
@@ -331,17 +415,6 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 if candidates:
                     sample_dir = candidates[0]
 
-        record_be = {
-            '样品名': s_name,
-            '描述': s_desc,
-            '原始碱基': s_base_from,
-            '修改后碱基': s_base_to,
-            '测序深度': 0
-        }
-        for p in range(1, sg_len + 1):
-            record_be[p] = None
-            record_be[f"u{p}"] = 0.0
-
         record_indel = {
             'Sample': s_name,
             '描述': s_desc,
@@ -354,8 +427,15 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             'Indels_without_subs': 0.0
         }
 
+        sub1_base, sub2_base = get_sub_byproduct_bases(s_base_from, s_base_to)
+
         if not os.path.exists(sample_dir):
-            records_be.append(record_be)
+            rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, None, None, None)
+            rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, None, None, None)
+            rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, None, None, None)
+            records_be_main.append(rec_main)
+            records_be_sub1.append(rec_s1)
+            records_be_sub2.append(rec_s2)
             records_indel.append(record_indel)
             continue
 
@@ -387,24 +467,16 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                     if num_cols:
                         s_base_from = num_cols[0][0]
                         s_base_to = 'G' if s_base_from == 'A' else 'T' if s_base_from == 'C' else 'A' if s_base_from == 'G' else 'C'
-                        record_be['原始碱基'] = s_base_from
-                        record_be['修改后碱基'] = s_base_to
                 except Exception:
                     pass
             elif 'ABE' in s_desc.upper() or 'ABE' in s_name.upper():
                 s_base_from = 'A'
                 s_base_to = 'G'
-                record_be['原始碱基'] = s_base_from
-                record_be['修改后碱基'] = s_base_to
 
-        # Resolve IUPAC base sets for target and unspecified conversions
-        s_base_from_clean = s_base_from.strip().upper() if s_base_from else 'A'
-        s_base_to_clean = s_base_to.strip().upper() if s_base_to else 'G'
-        from_bases = IUPAC_DNA_MAP.get(s_base_from_clean, {s_base_from_clean})
-        to_bases = IUPAC_DNA_MAP.get(s_base_to_clean, {s_base_to_clean})
-
-        target_bases = to_bases - from_bases if (to_bases - from_bases) else to_bases
-        unspec_bases = {'A', 'C', 'G', 'T'} - from_bases - to_bases
+        sub1_base, sub2_base = get_sub_byproduct_bases(s_base_from, s_base_to)
+        main_from_to_pairs.add(f"{s_base_from}-to-{s_base_to}")
+        sub1_from_to_pairs.add(f"{s_base_from}-to-{sub1_base}")
+        sub2_from_to_pairs.add(f"{s_base_from}-to-{sub2_base}")
 
         # 1. Parse Indel & Frameshift breakdown directly from Alleles_frequency_table_around_sgRNA
         if allele_file and os.path.exists(allele_file):
@@ -449,82 +521,65 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 print(f"Error reading info json offset for {s_name}: {e}")
 
         # Gap-matching fallback if info.json offset is not present
-        if offset is None and sg_table_file and os.path.exists(sg_table_file):
+        df_sg = None
+        if sg_table_file and os.path.exists(sg_table_file):
             try:
-                df_temp = pd.read_csv(sg_table_file, sep='\t')
-                sg_target_pos = [i + 1 for i, char in enumerate(s_sg) if char in from_bases] if s_sg else []
-                table_num_cols = [(int(c[1:]), c) for c in df_temp.columns if c and c[0] in from_bases and c[1:].isdigit()]
-                if sg_target_pos and table_num_cols:
-                    sg_gaps = [sg_target_pos[i+1] - sg_target_pos[i] for i in range(len(sg_target_pos)-1)]
-                    for start_i in range(len(table_num_cols) - len(sg_target_pos) + 1):
-                        candidate_cols = table_num_cols[start_i : start_i + len(sg_target_pos)]
-                        cand_gaps = [candidate_cols[i+1][0] - candidate_cols[i][0] for i in range(len(candidate_cols)-1)]
-                        if cand_gaps == sg_gaps:
-                            offset = int(candidate_cols[0][0] - sg_target_pos[0])
-                            break
+                df_sg = pd.read_csv(sg_table_file, sep='\t')
+                if offset is None:
+                    s_from_clean = s_base_from.strip().upper() if s_base_from else 'A'
+                    f_bases = IUPAC_DNA_MAP.get(s_from_clean, {s_from_clean})
+                    sg_target_pos = [i + 1 for i, char in enumerate(s_sg) if char in f_bases] if s_sg else []
+                    table_num_cols = [(int(c[1:]), c) for c in df_sg.columns if c and c[0] in f_bases and c[1:].isdigit()]
+                    if sg_target_pos and table_num_cols:
+                        sg_gaps = [sg_target_pos[i+1] - sg_target_pos[i] for i in range(len(sg_target_pos)-1)]
+                        for start_i in range(len(table_num_cols) - len(sg_target_pos) + 1):
+                            candidate_cols = table_num_cols[start_i : start_i + len(sg_target_pos)]
+                            cand_gaps = [candidate_cols[i+1][0] - candidate_cols[i][0] for i in range(len(candidate_cols)-1)]
+                            if cand_gaps == sg_gaps:
+                                offset = int(candidate_cols[0][0] - sg_target_pos[0])
+                                break
             except Exception:
                 pass
 
-        if sg_table_file and os.path.exists(sg_table_file) and offset is not None:
-            try:
-                df_sg = pd.read_csv(sg_table_file, sep='\t')
-                
-                for col in df_sg.columns:
-                    col_base = col[0] if len(col) > 1 and col[1:].isdigit() else None
-                    if col_base and (col_base in from_bases or col_base == s_base_from_clean) and col[1:].isdigit():
-                        K = int(col[1:])
-                        sg_pos = K + offset
-                        if 1 <= sg_pos <= sg_len and (not s_sg or s_sg[sg_pos - 1] in from_bases):
-                            col_series = df_sg[col]
-                            all_reads = pd.to_numeric(col_series, errors='coerce').sum()
-                            if all_reads > 0:
-                                record_be['测序深度'] = int(all_reads)
-                                target_reads = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in target_bases if b in BASE_ROW_MAP)
-                                eff_ratio = target_reads / float(all_reads)
-                                record_be[sg_pos] = eff_ratio
-
-            except Exception as e:
-                print(f"Error parsing BE sg table for {s_name}: {e}")
-
-        if sub_table_file and os.path.exists(sub_table_file) and offset is not None:
+        df_sub = None
+        if sub_table_file and os.path.exists(sub_table_file):
             try:
                 df_sub = pd.read_csv(sub_table_file, sep="\t")
-                total_depth = record_be['测序深度']
-                for pos in range(1, sg_len + 1):
-                    col_idx = pos - offset
-                    if 0 <= col_idx < len(df_sub.columns) and total_depth > 0:
-                        col_series = pd.to_numeric(df_sub.iloc[:, col_idx], errors='coerce').fillna(0)
-                        unspec_cnt = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in unspec_bases if b in BASE_ROW_MAP)
-                        if unspec_cnt < 0:
-                            unspec_cnt = 0
-                        unspec_ratio = unspec_cnt / float(total_depth)
-                        record_be[f"u{pos}"] = unspec_ratio
-                    else:
-                        record_be[f"u{pos}"] = 0.0
-            except Exception as e:
-                print(f"Error parsing BE sub table for {s_name}: {e}")
+            except Exception:
+                pass
+
+        # Extract 3 records: Main (Target), Sub1 (Byproduct 1), Sub2 (Byproduct 2)
+        rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, df_sg, df_sub, offset)
+        rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, df_sg, df_sub, offset)
+        rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, df_sg, df_sub, offset)
 
         if log_callback:
             log_callback(f"[INFO] 成功提取 BE 样本数据: {s_name}\n")
 
-        records_be.append(record_be)
+        records_be_main.append(rec_main)
+        records_be_sub1.append(rec_s1)
+        records_be_sub2.append(rec_s2)
         records_indel.append(record_indel)
 
     today_date = time.strftime("%Y%m%d")
     outname = f"{today_date}_BE_分析结果汇总.xlsx"
     outpath = os.path.join(output_dir, outname)
 
-    if records_be:
-        df_be = pd.DataFrame(records_be)
-        df_be[' '] = '' # Blank visual spacer column
-        
+    if records_be_main:
         base_cols = ['样品名', '描述', '原始碱基', '修改后碱基', '测序深度']
-        all_pos = [p for p in range(1, max_sg_len + 1) if p in df_be.columns]
-        all_unspec = [f"u{p}" for p in range(1, max_sg_len + 1) if f"u{p}" in df_be.columns]
         
-        ordered_be_cols = base_cols + all_pos + [' '] + all_unspec
-        existing_be_cols = [c for c in ordered_be_cols if c in df_be.columns]
-        df_be = df_be[existing_be_cols]
+        def format_be_df(records):
+            df = pd.DataFrame(records)
+            df[' '] = ''
+            all_pos = [p for p in range(1, max_sg_len + 1) if p in df.columns]
+            all_unspec = [f"u{p}" for p in range(1, max_sg_len + 1) if f"u{p}" in df.columns]
+            ordered = base_cols + all_pos + [' '] + all_unspec
+            existing = [c for c in ordered if c in df.columns]
+            return df[existing], all_pos, all_unspec
+
+        df_main, pos_main, unspec_main = format_be_df(records_be_main)
+        df_sub1, pos_sub1, unspec_sub1 = format_be_df(records_be_sub1)
+        df_sub2, pos_sub2, unspec_sub2 = format_be_df(records_be_sub2)
 
         df_indel = pd.DataFrame(records_indel)
         indel_cols = ["Sample", "描述", "wt_allele", "3n+1_del", "3n+2_del", "3n_del",
@@ -533,35 +588,73 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
         existing_ind_cols = [c for c in indel_cols if c in df_indel.columns]
         df_indel = df_indel[existing_ind_cols]
 
+        # Determine descriptive Sheet names
+        main_tag = list(main_from_to_pairs)[0] if len(main_from_to_pairs) == 1 else "目标"
+        s1_tag = list(sub1_from_to_pairs)[0] if len(sub1_from_to_pairs) == 1 else "副产物1"
+        s2_tag = list(sub2_from_to_pairs)[0] if len(sub2_from_to_pairs) == 1 else "副产物2"
+
+        sheet_main = f"BE 目标编辑效率_{main_tag} (主)"
+        sheet_sub1 = f"BE 副产物_{s1_tag} (副)"
+        sheet_sub2 = f"BE 副产物_{s2_tag} (副)"
+        sheet_ind = "BE Indel与移码分析 (副)"
+
+        # Ensure sheet names <= 31 chars
+        if len(sheet_main) > 31: sheet_main = "BE 目标编辑效率 (主)"
+        if len(sheet_sub1) > 31: sheet_sub1 = f"BE 副产物_{s1_tag[:10]} (副)"
+        if len(sheet_sub2) > 31: sheet_sub2 = f"BE 副产物_{s2_tag[:10]} (副)"
+
+        def write_all_sheets(writer_obj):
+            # Write Sheet 1: Main Target Efficiencies
+            df_main.to_excel(writer_obj, index=False, sheet_name=sheet_main)
+            ws_m = writer_obj.sheets[sheet_main]
+            pct_m = pos_main + unspec_main
+            col_m_idx = [df_main.columns.get_loc(c) + 1 for c in pct_m if c in df_main.columns]
+            for row in range(2, len(df_main) + 2):
+                for col_idx in col_m_idx:
+                    cell = ws_m.cell(row=row, column=col_idx)
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '0.00%'
+
+            # Write Sheet 2: Sub1 Byproduct Efficiencies
+            df_sub1.to_excel(writer_obj, index=False, sheet_name=sheet_sub1)
+            ws_s1 = writer_obj.sheets[sheet_sub1]
+            pct_s1 = pos_sub1 + unspec_sub1
+            col_s1_idx = [df_sub1.columns.get_loc(c) + 1 for c in pct_s1 if c in df_sub1.columns]
+            for row in range(2, len(df_sub1) + 2):
+                for col_idx in col_s1_idx:
+                    cell = ws_s1.cell(row=row, column=col_idx)
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '0.00%'
+
+            # Write Sheet 3: Sub2 Byproduct Efficiencies
+            df_sub2.to_excel(writer_obj, index=False, sheet_name=sheet_sub2)
+            ws_s2 = writer_obj.sheets[sheet_sub2]
+            pct_s2 = pos_sub2 + unspec_sub2
+            col_s2_idx = [df_sub2.columns.get_loc(c) + 1 for c in pct_s2 if c in df_sub2.columns]
+            for row in range(2, len(df_sub2) + 2):
+                for col_idx in col_s2_idx:
+                    cell = ws_s2.cell(row=row, column=col_idx)
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '0.00%'
+
+            # Write Sheet 4: Indel & Frameshift Breakdown
+            df_indel.to_excel(writer_obj, index=False, sheet_name=sheet_ind)
+            ws_ind = writer_obj.sheets[sheet_ind]
+            pct_ind = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
+            col_ind_idx = [df_indel.columns.get_loc(c) + 1 for c in pct_ind if c in df_indel.columns]
+            for row in range(2, len(df_indel) + 2):
+                for col_idx in col_ind_idx:
+                    cell = ws_ind.cell(row=row, column=col_idx)
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '0.00%'
+
         try:
             with pd.ExcelWriter(outpath, engine='openpyxl') as writer:
-                # Write Sheet 1: BE Base Editing Window Efficiencies
-                df_be.to_excel(writer, index=False, sheet_name="BE 碱基编辑效率汇总")
-                ws_be = writer.sheets["BE 碱基编辑效率汇总"]
-                percentage_be_cols = all_pos + all_unspec
-                col_be_indices = [df_be.columns.get_loc(c) + 1 for c in percentage_be_cols if c in df_be.columns]
-                for row in range(2, len(df_be) + 2):
-                    for col_idx in col_be_indices:
-                        cell = ws_be.cell(row=row, column=col_idx)
-                        if cell.value is not None and isinstance(cell.value, (int, float)):
-                            cell.number_format = '0.00%'
-
-                # Write Sheet 2: BE Indel & Frameshift Breakdown
-                df_indel.to_excel(writer, index=False, sheet_name="BE Indel与移码分析")
-                ws_ind = writer.sheets["BE Indel与移码分析"]
-                percentage_ind_cols = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
-                col_ind_indices = [df_indel.columns.get_loc(c) + 1 for c in percentage_ind_cols if c in df_indel.columns]
-                for row in range(2, len(df_indel) + 2):
-                    for col_idx in col_ind_indices:
-                        cell = ws_ind.cell(row=row, column=col_idx)
-                        if cell.value is not None and isinstance(cell.value, (int, float)):
-                            cell.number_format = '0.00%'
-
+                write_all_sheets(writer)
         except PermissionError:
             outpath = os.path.join(output_dir, f"{today_date}_BE_分析结果汇总_最新.xlsx")
             with pd.ExcelWriter(outpath, engine='openpyxl') as writer:
-                df_be.to_excel(writer, index=False, sheet_name="BE 碱基编辑效率汇总")
-                df_indel.to_excel(writer, index=False, sheet_name="BE Indel与移码分析")
+                write_all_sheets(writer)
 
         return outpath
     else:
