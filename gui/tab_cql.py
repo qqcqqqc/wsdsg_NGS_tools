@@ -2,7 +2,8 @@ import os
 import pandas as pd
 from gui.qt_compat import (
     QDialog, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QLineEdit,
-    QPushButton, QTextEdit, QProgressBar, QFileDialog, QMessageBox, QThread, Signal, Slot
+    QPushButton, QTextEdit, QProgressBar, QFileDialog, QMessageBox, QThread, Signal, Slot,
+    DropLineEdit
 )
 from core.cql_engine import run_cql_pipeline
 from core.platform_runner import global_runner
@@ -50,6 +51,7 @@ class CQLDialog(QDialog):
     """
     Dedicated CQL All-in-One Demux & Analysis Dialog ("宇宙最帅CQL专属福利").
     Simplified inputs: Only requires Excel file and Raw FASTQ directory.
+    Supports Drag-and-Drop for files and directories.
     Output directory is automatically placed alongside Raw FASTQ directory.
     """
     def __init__(self, parent=None):
@@ -57,7 +59,29 @@ class CQLDialog(QDialog):
         self.setWindowTitle("宇宙最帅CQL专属福利")
         self.resize(800, 580)
         self.worker = None
+        self.setAcceptDrops(True)
         self.init_ui()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                path = os.path.abspath(urls[0].toLocalFile().strip())
+                p_lower = path.lower()
+                if p_lower.endswith('.xlsx') or p_lower.endswith('.xls') or p_lower.endswith('.csv'):
+                    self.txt_excel.setText(path)
+                    event.acceptProposedAction()
+                elif os.path.isdir(path):
+                    self.txt_fastq.setText(path)
+                    event.acceptProposedAction()
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -69,8 +93,8 @@ class CQLDialog(QDialog):
         # 1. Excel Sheet Selection
         excel_layout = QHBoxLayout()
         excel_layout.addWidget(QLabel("拆分分析一体表 (Excel):"))
-        self.txt_excel = QLineEdit(self)
-        self.txt_excel.setPlaceholderText("选择包含 (样品名, 描述, 所在样品库, 索引序列1, 索引序列2, sg, 原始序列) 的 Excel 表格...")
+        self.txt_excel = DropLineEdit(filter_type='excel', parent=self)
+        self.txt_excel.setPlaceholderText("选择或直接拖入包含 (样品名, 描述, 所在样品库, 索引序列1, 索引序列2, sg, 原始序列) 的 Excel 表格...")
         excel_layout.addWidget(self.txt_excel)
         btn_excel = QPushButton("浏览 Excel...", self)
         btn_excel.clicked.connect(self.browse_excel)
@@ -80,8 +104,8 @@ class CQLDialog(QDialog):
         # 2. Raw FASTQ Dir Selection
         fq_layout = QHBoxLayout()
         fq_layout.addWidget(QLabel("Raw FASTQ 文件夹:"))
-        self.txt_fastq = QLineEdit(self)
-        self.txt_fastq.setPlaceholderText("选择包含原始测序文库 FASTQ 文件的目录...")
+        self.txt_fastq = DropLineEdit(filter_type='dir', parent=self)
+        self.txt_fastq.setPlaceholderText("选择或直接拖入包含原始测序文库 FASTQ 文件的目录...")
         fq_layout.addWidget(self.txt_fastq)
         btn_fq = QPushButton("选择 FASTQ 目录...", self)
         btn_fq.clicked.connect(self.browse_fastq_dir)

@@ -28,6 +28,16 @@ def get_optimal_thread_count() -> int:
     except Exception:
         return 4
 
+# Standard and degenerate IUPAC DNA base mapping
+IUPAC_DNA_MAP = {
+    'A': {'A'}, 'C': {'C'}, 'G': {'G'}, 'T': {'T'}, 'U': {'T'},
+    'R': {'A', 'G'}, 'Y': {'C', 'T'}, 'S': {'C', 'G'}, 'W': {'A', 'T'},
+    'K': {'G', 'T'}, 'M': {'A', 'C'}, 'B': {'C', 'G', 'T'},
+    'D': {'A', 'G', 'T'}, 'H': {'A', 'C', 'T'}, 'V': {'A', 'C', 'G'},
+    'N': {'A', 'C', 'G', 'T'}
+}
+BASE_ROW_MAP = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
+
 def parse_crispresso_sample_sheet(xlsx_path: str) -> List[Dict[str, str]]:
     """
     Parse CRISPResso batch analysis sample sheet (.xlsx).
@@ -37,7 +47,7 @@ def parse_crispresso_sample_sheet(xlsx_path: str) -> List[Dict[str, str]]:
     - sg / sgRNA
     - 原始序列 / Amplicon (avoid matching 索引序列!)
     - 原始碱基 / base_from (Optional for BE, default C)
-    - 修改后碱基 / base_to (Optional for BE, default T)
+    - 修改后碱基 / base_to (Optional for BE, default T, supports any IUPAC letter code)
     - 供体序列 / Donor (Optional for HDR/PE)
     """
     if not os.path.exists(xlsx_path):
@@ -77,8 +87,8 @@ def parse_crispresso_sample_sheet(xlsx_path: str) -> List[Dict[str, str]]:
                 'desc': s_desc,
                 'sg': s_sg,
                 'amplicon': s_amp,
-                'base_from': s_base_from if len(s_base_from) == 1 else "C",
-                'base_to': s_base_to if len(s_base_to) == 1 else "T",
+                'base_from': s_base_from if s_base_from else "C",
+                'base_to': s_base_to if s_base_to else "T",
                 'donor': s_donor
             })
             
@@ -201,7 +211,7 @@ def process_nhej_cleavage_file(filepath: str, sample_name: str) -> Dict[str, Any
         "Indels_without_subs": pct_without_subs,
     }
 
-def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
+def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str, log_callback: Optional[Callable[[str], None]] = None) -> str:
     """Summarize NHEJ results using cleavage_sum_QQC.py logic with date prefix and numeric percentage formatting."""
     results = []
     sample_desc = {s['name']: s['desc'] for s in samples}
@@ -210,7 +220,14 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         s_name = s['name']
         sample_dir = os.path.join(output_dir, s_name)
         if not os.path.exists(sample_dir):
-            continue
+            if os.path.exists(os.path.join(output_dir, "CRISPResso_Output", s_name)):
+                sample_dir = os.path.join(output_dir, "CRISPResso_Output", s_name)
+            else:
+                candidates = [os.path.join(output_dir, d) for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d)) and (d == s_name or d.startswith(f"{s_name}_") or f"_on_{s_name}_" in d or f"CRISPResso_on_{s_name}" in d)]
+                if candidates:
+                    sample_dir = candidates[0]
+                else:
+                    continue
 
         subfolders = [os.path.join(sample_dir, f) for f in os.listdir(sample_dir) if os.path.isdir(os.path.join(sample_dir, f))]
         target_dir = subfolders[0] if subfolders else sample_dir
@@ -227,6 +244,8 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                 row = process_nhej_cleavage_file(allele_file, s_name)
                 row["描述"] = sample_desc.get(s_name, "")
                 results.append(row)
+                if log_callback:
+                    log_callback(f"[INFO] 成功提取 NHEJ 样本数据: {s_name}\n")
             except Exception as e:
                 print(f"Error parsing NHEJ cleavage for {s_name}: {e}")
 
@@ -263,9 +282,10 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         df_empty.to_excel(outpath, index=False)
         return outpath
 
-def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
+def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callback: Optional[Callable[[str], None]] = None) -> str:
     """
     Summarize BE results dynamically matching sgRNA length (1..N and u1..uN).
+    - Supports arbitrary ATCG and any degenerate IUPAC DNA letter codes (R, Y, S, W, K, M, B, D, H, V, N).
     - Sheet 1: BE Base Editing Window Efficiencies (1..N & u1..uN).
     - Sheet 2: BE Indel & Frameshift Breakdown.
     """
@@ -278,14 +298,24 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         s_desc = s['desc']
         s_sg = s['sg']
         s_amp = s['amplicon']
-        s_base_from = s['base_from']
-        s_base_to = s['base_to']
+        
+        user_specified_base = bool(s.get('base_from') and s.get('base_to'))
+        s_base_from = str(s.get('base_from', 'C')).strip().upper()
+        s_base_to = str(s.get('base_to', 'T')).strip().upper()
 
         sg_len = len(s_sg) if s_sg else 20
         if sg_len > max_sg_len:
             max_sg_len = sg_len
 
         sample_dir = os.path.join(output_dir, s_name)
+        if not os.path.exists(sample_dir):
+            if os.path.exists(os.path.join(output_dir, "CRISPResso_Output", s_name)):
+                sample_dir = os.path.join(output_dir, "CRISPResso_Output", s_name)
+            else:
+                candidates = [os.path.join(output_dir, d) for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d)) and (d == s_name or d.startswith(f"{s_name}_") or f"_on_{s_name}_" in d or f"CRISPResso_on_{s_name}" in d)]
+                if candidates:
+                    sample_dir = candidates[0]
+
         record_be = {
             '样品名': s_name,
             '描述': s_desc,
@@ -334,22 +364,32 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                     allele_file = os.path.join(target_dir, f)
 
         # Auto-detect base_from / base_to from output table or description if not explicitly set in Excel
-        if sg_table_file and os.path.exists(sg_table_file):
-            try:
-                df_sg_head = pd.read_csv(sg_table_file, sep='\t', nrows=1)
-                num_cols = [c for c in df_sg_head.columns if c and c[0] in 'ACGT' and c[1:].isdigit()]
-                if num_cols:
-                    s_base_from = num_cols[0][0]
-                    s_base_to = 'G' if s_base_from == 'A' else 'T' if s_base_from == 'C' else 'A' if s_base_from == 'G' else 'C'
-                    record_be['原始碱基'] = s_base_from
-                    record_be['修改后碱基'] = s_base_to
-            except Exception:
-                pass
-        elif 'ABE' in s_desc.upper() or 'ABE' in s_name.upper():
-            s_base_from = 'A'
-            s_base_to = 'G'
-            record_be['原始碱基'] = s_base_from
-            record_be['修改后碱基'] = s_base_to
+        if not user_specified_base:
+            if sg_table_file and os.path.exists(sg_table_file):
+                try:
+                    df_sg_head = pd.read_csv(sg_table_file, sep='\t', nrows=1)
+                    num_cols = [c for c in df_sg_head.columns if c and c[0] in 'ACGT' and c[1:].isdigit()]
+                    if num_cols:
+                        s_base_from = num_cols[0][0]
+                        s_base_to = 'G' if s_base_from == 'A' else 'T' if s_base_from == 'C' else 'A' if s_base_from == 'G' else 'C'
+                        record_be['原始碱基'] = s_base_from
+                        record_be['修改后碱基'] = s_base_to
+                except Exception:
+                    pass
+            elif 'ABE' in s_desc.upper() or 'ABE' in s_name.upper():
+                s_base_from = 'A'
+                s_base_to = 'G'
+                record_be['原始碱基'] = s_base_from
+                record_be['修改后碱基'] = s_base_to
+
+        # Resolve IUPAC base sets for target and unspecified conversions
+        s_base_from_clean = s_base_from.strip().upper() if s_base_from else 'A'
+        s_base_to_clean = s_base_to.strip().upper() if s_base_to else 'G'
+        from_bases = IUPAC_DNA_MAP.get(s_base_from_clean, {s_base_from_clean})
+        to_bases = IUPAC_DNA_MAP.get(s_base_to_clean, {s_base_to_clean})
+
+        target_bases = to_bases - from_bases if (to_bases - from_bases) else to_bases
+        unspec_bases = {'A', 'C', 'G', 'T'} - from_bases - to_bases
 
         # 1. Parse Indel & Frameshift breakdown directly from Alleles_frequency_table_around_sgRNA
         if allele_file and os.path.exists(allele_file):
@@ -397,8 +437,8 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         if offset is None and sg_table_file and os.path.exists(sg_table_file):
             try:
                 df_temp = pd.read_csv(sg_table_file, sep='\t')
-                sg_target_pos = [i + 1 for i, char in enumerate(s_sg) if char == s_base_from] if s_sg else []
-                table_num_cols = [(int(c[1:]), c) for c in df_temp.columns if c.startswith(s_base_from) and c[1:].isdigit()]
+                sg_target_pos = [i + 1 for i, char in enumerate(s_sg) if char in from_bases] if s_sg else []
+                table_num_cols = [(int(c[1:]), c) for c in df_temp.columns if c and c[0] in from_bases and c[1:].isdigit()]
                 if sg_target_pos and table_num_cols:
                     sg_gaps = [sg_target_pos[i+1] - sg_target_pos[i] for i in range(len(sg_target_pos)-1)]
                     for start_i in range(len(table_num_cols) - len(sg_target_pos) + 1):
@@ -413,18 +453,18 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         if sg_table_file and os.path.exists(sg_table_file) and offset is not None:
             try:
                 df_sg = pd.read_csv(sg_table_file, sep='\t')
-                to_r_idx = 0 if s_base_to=='A' else 1 if s_base_to=='C' else 2 if s_base_to=='G' else 3
                 
                 for col in df_sg.columns:
-                    if col.startswith(s_base_from) and col[1:].isdigit():
+                    col_base = col[0] if len(col) > 1 and col[1:].isdigit() else None
+                    if col_base and (col_base in from_bases or col_base == s_base_from_clean) and col[1:].isdigit():
                         K = int(col[1:])
                         sg_pos = K + offset
-                        if 1 <= sg_pos <= sg_len and (not s_sg or s_sg[sg_pos - 1] == s_base_from):
+                        if 1 <= sg_pos <= sg_len and (not s_sg or s_sg[sg_pos - 1] in from_bases):
                             col_series = df_sg[col]
                             all_reads = pd.to_numeric(col_series, errors='coerce').sum()
                             if all_reads > 0:
                                 record_be['测序深度'] = int(all_reads)
-                                target_reads = float(col_series.iloc[to_r_idx])
+                                target_reads = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in target_bases if b in BASE_ROW_MAP)
                                 eff_ratio = target_reads / float(all_reads)
                                 record_be[sg_pos] = eff_ratio
 
@@ -434,18 +474,12 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         if sub_table_file and os.path.exists(sub_table_file) and offset is not None:
             try:
                 df_sub = pd.read_csv(sub_table_file, sep="\t")
-                from_r_idx = 0 if s_base_from=='A' else 1 if s_base_from=='C' else 2 if s_base_from=='G' else 3
-                to_r_idx = 0 if s_base_to=='A' else 1 if s_base_to=='C' else 2 if s_base_to=='G' else 3
-                
                 total_depth = record_be['测序深度']
                 for pos in range(1, sg_len + 1):
                     col_idx = pos - offset
                     if 0 <= col_idx < len(df_sub.columns) and total_depth > 0:
                         col_series = pd.to_numeric(df_sub.iloc[:, col_idx], errors='coerce').fillna(0)
-                        sub_total = float(col_series.iloc[:4].sum())
-                        from_cnt = float(col_series.iloc[from_r_idx])
-                        to_cnt = float(col_series.iloc[to_r_idx])
-                        unspec_cnt = sub_total - from_cnt - to_cnt
+                        unspec_cnt = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in unspec_bases if b in BASE_ROW_MAP)
                         if unspec_cnt < 0:
                             unspec_cnt = 0
                         unspec_ratio = unspec_cnt / float(total_depth)
@@ -454,6 +488,9 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                         record_be[f"u{pos}"] = 0.0
             except Exception as e:
                 print(f"Error parsing BE sub table for {s_name}: {e}")
+
+        if log_callback:
+            log_callback(f"[INFO] 成功提取 BE 样本数据: {s_name}\n")
 
         records_be.append(record_be)
         records_indel.append(record_indel)
@@ -698,3 +735,70 @@ def run_crispresso_batch_pipeline(
         log_callback(f"\n[OK] 批量分析完成！汇总表格已导出至:\n  {summary_excel_path}\n")
 
     return processed_dirs, summary_excel_path
+
+def run_summary_only_pipeline(
+    excel_path: str,
+    crispresso_dir: str,
+    output_dir: str,
+    edit_type: str = "Base Editing (BE)",
+    log_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Optional[Callable[[int, int], None]] = None
+) -> str:
+    """
+    Execute ONLY the data summary step from existing CRISPResso2 output directories.
+    Parses the sample sheet, extracts substitution & indel data from crispresso_dir,
+    and writes the summary Excel workbook into output_dir.
+    """
+    if log_callback:
+        log_callback(f"[INFO] 正在解析分析信息表: {excel_path}\n")
+
+    # Try cql parsing first, fallback to standard crispresso sheet
+    samples = []
+    try:
+        from core.cql_engine import parse_cql_sample_sheet
+        samples = parse_cql_sample_sheet(excel_path)
+    except Exception:
+        pass
+    if not samples:
+        samples = parse_crispresso_sample_sheet(excel_path)
+
+    if not samples:
+        raise ValueError("未能从 Excel 表格中解析出有效样本，请检查表头或内容！")
+
+    if log_callback:
+        log_callback(f"[INFO] 成功载入 {len(samples)} 个样本条目。\n")
+        log_callback(f"[INFO] 正在从结果目录提取数据: {crispresso_dir}\n")
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Check if samples are BE or NHEJ
+    be_samples = [s for s in samples if s.get('mode') == 'Base Editing (BE)']
+    nhej_samples = [s for s in samples if s.get('mode') != 'Base Editing (BE)']
+
+    summary_paths = []
+    if "BE" in edit_type or be_samples:
+        target_be = be_samples if be_samples else samples
+        res_be = summarize_be_batch(target_be, crispresso_dir, log_callback=log_callback)
+        if res_be and os.path.exists(res_be):
+            final_be = os.path.join(output_dir, os.path.basename(res_be))
+            if os.path.abspath(res_be) != os.path.abspath(final_be):
+                shutil.copy2(res_be, final_be)
+            summary_paths.append(final_be)
+            if log_callback:
+                log_callback(f"[OK] BE 分析汇总报表已生成: {final_be}\n")
+
+    if ("NHEJ" in edit_type or "HDR" in edit_type or "PE" in edit_type or nhej_samples) and ("BE" not in edit_type or nhej_samples):
+        target_nhej = nhej_samples if nhej_samples else samples
+        res_nhej = summarize_nhej_batch(target_nhej, crispresso_dir, log_callback=log_callback)
+        if res_nhej and os.path.exists(res_nhej):
+            final_nhej = os.path.join(output_dir, os.path.basename(res_nhej))
+            if os.path.abspath(res_nhej) != os.path.abspath(final_nhej):
+                shutil.copy2(res_nhej, final_nhej)
+            summary_paths.append(final_nhej)
+            if log_callback:
+                log_callback(f"[OK] NHEJ/HDR 分析汇总报表已生成: {final_nhej}\n")
+
+    if progress_callback:
+        progress_callback(1, 1)
+
+    return "\n".join(summary_paths) if summary_paths else ""

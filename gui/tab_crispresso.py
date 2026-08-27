@@ -11,7 +11,8 @@ from gui.qt_compat import (
 from core.platform_runner import global_runner, win_to_wsl_path, is_windows
 from core.crispresso_engine import (
     parse_crispresso_sample_sheet,
-    run_crispresso_batch_pipeline
+    run_crispresso_batch_pipeline,
+    run_summary_only_pipeline
 )
 
 class DropLineEdit(QLineEdit):
@@ -266,6 +267,33 @@ class CRISPRessoSingleWorker(QThread):
         global_runner.kill_current_process()
         self.terminate()
 
+class SummaryWorkerThread(QThread):
+    log_signal = Signal(str)
+    progress_signal = Signal(int, int)
+    finished_signal = Signal(bool, str)
+
+    def __init__(self, excel_path: str, crispresso_dir: str, output_dir: str, edit_type: str, parent=None):
+        super().__init__(parent)
+        self.excel_path = excel_path
+        self.crispresso_dir = crispresso_dir
+        self.output_dir = output_dir
+        self.edit_type = edit_type
+
+    def run(self):
+        try:
+            res_summary = run_summary_only_pipeline(
+                excel_path=self.excel_path,
+                crispresso_dir=self.crispresso_dir,
+                output_dir=self.output_dir,
+                edit_type=self.edit_type,
+                log_callback=self.log_signal.emit,
+                progress_callback=self.progress_signal.emit
+            )
+            self.finished_signal.emit(True, res_summary)
+        except Exception as e:
+            self.log_signal.emit(f"\n[ERROR] 汇总异常: {str(e)}\n")
+            self.finished_signal.emit(False, "")
+
 class CRISPRessoTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -469,6 +497,12 @@ class CRISPRessoTab(QWidget):
         self.btn_run.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #1976d2; color: white; padding: 6px 16px;")
         self.btn_run.clicked.connect(self.start_analysis)
         out_layout.addWidget(self.btn_run)
+
+        self.btn_summary_only = QPushButton("📈 仅重新生成汇总", self)
+        self.btn_summary_only.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #f57c00; color: white; padding: 6px 14px;")
+        self.btn_summary_only.setToolTip("当已有 CRISPResso2 运行结果时，无需重新比对测序文件，直接根据 Excel 信息表和结果目录秒级提取并生成汇总 Excel 表格！")
+        self.btn_summary_only.clicked.connect(self.start_summary_only)
+        out_layout.addWidget(self.btn_summary_only)
 
         self.btn_stop = QPushButton("停止", self)
         self.btn_stop.setEnabled(False)
@@ -744,13 +778,80 @@ class CRISPRessoTab(QWidget):
             self.worker.finished_signal.connect(self.on_single_finished)
             self.worker.start()
 
+    def start_summary_only(self):
+        excel_path = self.txt_batch_excel.text().strip()
+        crispresso_dir = self.txt_batch_fq.text().strip()
+        output_dir = self.txt_output_dir.text().strip()
+
+        # If output_dir is empty but crispresso_dir is provided, default output to crispresso_dir
+        if not output_dir and crispresso_dir:
+            output_dir = crispresso_dir
+            self.txt_output_dir.setText(output_dir)
+
+        # If crispresso_dir is empty but output_dir is provided, search in output_dir
+        if not crispresso_dir and output_dir:
+            crispresso_dir = output_dir
+
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "参数错误", "请先选择有效的分析信息 Excel 表格！")
+            return
+
+        if not crispresso_dir or not os.path.exists(crispresso_dir):
+            QMessageBox.warning(self, "参数错误", "请选择包含已有 CRISPResso 运行结果的文件夹！\n（可填在 FASTQ 目录或结果输出目录输入框中）")
+            return
+
+        if not output_dir:
+            output_dir = crispresso_dir
+
+        self.btn_run.setEnabled(False)
+        self.btn_summary_only.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self.log_text.clear()
+        self.progress_bar.setValue(0)
+
+        edit_type = self.combo_edit_type.currentText()
+        self.log_text.append(f"[INFO] 正在启动仅汇总模式 (无需重新运行 CRISPResso2)...")
+        self.log_text.append(f"[INFO] 分析表格: {excel_path}")
+        self.log_text.append(f"[INFO] 结果文件夹: {crispresso_dir}")
+        self.log_text.append(f"[INFO] 汇总输出目录: {output_dir}\n")
+
+        self.summary_worker = SummaryWorkerThread(
+            excel_path=excel_path,
+            crispresso_dir=crispresso_dir,
+            output_dir=output_dir,
+            edit_type=edit_type
+        )
+        self.summary_worker.log_signal.connect(self.append_log)
+        self.summary_worker.progress_signal.connect(self.update_progress)
+        self.summary_worker.finished_signal.connect(self.on_summary_only_finished)
+        self.summary_worker.start()
+
+    @Slot(bool, str)
+    def on_summary_only_finished(self, success: bool, summary_path: str):
+        self.btn_run.setEnabled(True)
+        self.btn_summary_only.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        if success:
+            self.progress_bar.setValue(100)
+            QMessageBox.information(
+                self,
+                "汇总完成",
+                f"🎉 汇总表格已重新生成完毕！\n\n文件路径:\n{summary_path}"
+            )
+        else:
+            QMessageBox.critical(self, "汇总失败", "汇总过程中出现异常，请查看日志！")
+
     def stop_analysis(self):
-        if self.worker:
+        if hasattr(self, 'worker') and self.worker:
             self.worker.stop()
             global_runner.kill_current_process()
             self.append_log("\n[WARN] 用户已强行终止基因编辑分析任务，并彻底强杀后台 WSL 进程！\n")
-            self.btn_run.setEnabled(True)
-            self.btn_stop.setEnabled(False)
+        if hasattr(self, 'summary_worker') and self.summary_worker:
+            self.summary_worker.terminate()
+            self.append_log("\n[WARN] 用户已强行终止汇总任务！\n")
+        self.btn_run.setEnabled(True)
+        self.btn_summary_only.setEnabled(True)
+        self.btn_stop.setEnabled(False)
 
     @Slot(str)
     def append_log(self, text: str):
@@ -766,6 +867,7 @@ class CRISPRessoTab(QWidget):
     @Slot(bool, str)
     def on_finished(self, success: bool, summary_excel: str):
         self.btn_run.setEnabled(True)
+        self.btn_summary_only.setEnabled(True)
         self.btn_stop.setEnabled(False)
         if success:
             self.progress_bar.setValue(100)
@@ -776,6 +878,7 @@ class CRISPRessoTab(QWidget):
     @Slot(bool, str)
     def on_single_finished(self, success: bool, out_dir: str):
         self.btn_run.setEnabled(True)
+        self.btn_summary_only.setEnabled(True)
         self.btn_stop.setEnabled(False)
         if success:
             self.progress_bar.setValue(100)
