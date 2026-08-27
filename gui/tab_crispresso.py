@@ -626,16 +626,7 @@ class CRISPRessoTab(QWidget):
                 return
 
             # Optional / Mode specific warnings
-            if "BE" in mode_text and (not has_base_from or not has_base_to):
-                msg = (
-                    "捕捉到您正在使用 BE 碱基编辑模式~\n"
-                    "检测到当前表格里缺少【原始碱基】或【修改后碱基】列哦！\n"
-                    "小助手已贴心替您暂存为默认的 C ➔ T 分析啦！\n\n"
-                    "（小贴士：如果实际是 A ➔ G 变异，记得在表格中加入这两列哦~）"
-                )
-                QMessageBox.information(self, "😉😉😉", msg)
-
-            elif ("HDR" in mode_text or "PE" in mode_text) and not has_donor:
+            if ("HDR" in mode_text or "PE" in mode_text) and not has_donor:
                 msg = (
                     "💡 温馨俏皮小提示 😉\n\n"
                     "观察到您选了 HDR / PE 模式~\n"
@@ -780,28 +771,47 @@ class CRISPRessoTab(QWidget):
 
     def start_summary_only(self):
         excel_path = self.txt_batch_excel.text().strip()
-        crispresso_dir = self.txt_batch_fq.text().strip()
-        output_dir = self.txt_output_dir.text().strip()
+        fq_dir = self.txt_batch_fq.text().strip()
+        out_dir = self.txt_output_dir.text().strip()
 
-        # If output_dir is empty but crispresso_dir is provided, default output to crispresso_dir
-        if not output_dir and crispresso_dir:
-            output_dir = crispresso_dir
-            self.txt_output_dir.setText(output_dir)
+        # Helper to check if a directory contains CRISPResso outputs
+        def has_crispresso_data(d):
+            if not d or not os.path.exists(d):
+                return False
+            for root, dirs, files in os.walk(d):
+                if any('Selected_nucleotide_frequency_table' in f or 'Alleles_frequency_table' in f or f == 'CRISPResso2_info.json' for f in files):
+                    return True
+            return False
 
-        # If crispresso_dir is empty but output_dir is provided, search in output_dir
-        if not crispresso_dir and output_dir:
-            crispresso_dir = output_dir
+        crispresso_dir = ""
+        output_dir = ""
+
+        # Intelligently find where the existing CRISPResso results are located
+        if has_crispresso_data(out_dir):
+            crispresso_dir = out_dir
+            output_dir = out_dir
+        elif has_crispresso_data(fq_dir):
+            crispresso_dir = fq_dir
+            output_dir = out_dir if out_dir and os.path.exists(out_dir) else fq_dir
+        elif out_dir and os.path.exists(out_dir):
+            crispresso_dir = out_dir
+            output_dir = out_dir
+        elif fq_dir and os.path.exists(fq_dir):
+            crispresso_dir = fq_dir
+            output_dir = fq_dir
 
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "参数错误", "请先选择有效的分析信息 Excel 表格！")
             return
 
-        if not crispresso_dir or not os.path.exists(crispresso_dir):
-            QMessageBox.warning(self, "参数错误", "请选择包含已有 CRISPResso 运行结果的文件夹！\n（可填在 FASTQ 目录或结果输出目录输入框中）")
+        if not crispresso_dir:
+            QMessageBox.warning(
+                self,
+                "参数错误",
+                "未能找到包含已有 CRISPResso 运行结果的文件夹！\n\n"
+                "提示：请在【结果输出目录】或【FASTQ 文件夹】中填入包含以往 CRISPResso 运行输出文件的目录路径。"
+            )
             return
-
-        if not output_dir:
-            output_dir = crispresso_dir
 
         self.btn_run.setEnabled(False)
         self.btn_summary_only.setEnabled(False)

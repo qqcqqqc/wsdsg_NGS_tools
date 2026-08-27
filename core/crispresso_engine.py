@@ -78,17 +78,32 @@ def parse_crispresso_sample_sheet(xlsx_path: str) -> List[Dict[str, str]]:
             s_desc = str(row[col_desc]).strip() if col_desc and pd.notna(row[col_desc]) else ""
             s_sg = str(row[col_sg]).strip().upper() if col_sg and pd.notna(row[col_sg]) else ""
             s_amp = str(row[col_amp]).strip().upper() if col_amp and pd.notna(row[col_amp]) else ""
-            s_base_from = str(row[col_base_from]).strip().upper() if col_base_from and pd.notna(row[col_base_from]) else "C"
-            s_base_to = str(row[col_base_to]).strip().upper() if col_base_to and pd.notna(row[col_base_to]) else "T"
+            raw_from = str(row[col_base_from]).strip().upper() if col_base_from and pd.notna(row[col_base_from]) else ""
+            raw_to = str(row[col_base_to]).strip().upper() if col_base_to and pd.notna(row[col_base_to]) else ""
             s_donor = str(row[col_donor]).strip().upper() if col_donor and pd.notna(row[col_donor]) else ""
+            
+            if raw_from and raw_from.lower() != 'nan' and raw_to and raw_to.lower() != 'nan':
+                s_base_from = raw_from
+                s_base_to = raw_to
+            else:
+                desc_upper = s_desc.upper()
+                if desc_upper.startswith("ABE") or "ABE" in desc_upper:
+                    s_base_from = "A"
+                    s_base_to = "G"
+                elif desc_upper.startswith("CBE") or "CBE" in desc_upper:
+                    s_base_from = "C"
+                    s_base_to = "T"
+                else:
+                    s_base_from = raw_from if raw_from and raw_from.lower() != 'nan' else "C"
+                    s_base_to = raw_to if raw_to and raw_to.lower() != 'nan' else "T"
             
             samples.append({
                 'name': s_name,
                 'desc': s_desc,
                 'sg': s_sg,
                 'amplicon': s_amp,
-                'base_from': s_base_from if s_base_from else "C",
-                'base_to': s_base_to if s_base_to else "T",
+                'base_from': s_base_from,
+                'base_to': s_base_to,
                 'donor': s_donor
             })
             
