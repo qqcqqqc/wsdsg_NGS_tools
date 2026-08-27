@@ -365,13 +365,11 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
         if s_sg and s_amp:
             s_sg_clean = s_sg.strip().upper()
             s_amp_clean = s_amp.strip().upper()
+            if s_sg_clean not in s_amp_clean and s_sg_clean in rc(s_amp_clean):
+                s_amp_clean = rc(s_amp_clean)
             idx = s_amp_clean.find(s_sg_clean)
             if idx != -1:
                 sg_start_exact = idx
-            else:
-                idx_rc = s_amp_clean.find(rc(s_sg_clean))
-                if idx_rc != -1:
-                    sg_start_exact = idx_rc
 
         offset = None
         if info_file and os.path.exists(info_file):
@@ -384,15 +382,14 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str) -> str:
                     ref_dict = info_data['results']['refs'][first_k]
                 
                 plot_idxs = ref_dict.get('sgRNA_plot_idxs', [])
+                sg_intervals = ref_dict.get('sgRNA_intervals', [])
                 if plot_idxs:
                     plot_start = int(plot_idxs[0][0])
-                    if sg_start_exact is not None:
+                    if sg_intervals:
+                        sg_start_info = int(sg_intervals[0][0])
+                        offset = int(plot_start - sg_start_info)
+                    elif sg_start_exact is not None:
                         offset = int(plot_start - sg_start_exact)
-                    else:
-                        sg_intervals = ref_dict.get('sgRNA_intervals', [])
-                        if sg_intervals:
-                            sg_start_info = int(sg_intervals[0][0])
-                            offset = int(plot_start - sg_start_info)
             except Exception as e:
                 print(f"Error reading info json offset for {s_name}: {e}")
 
