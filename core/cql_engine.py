@@ -41,6 +41,9 @@ def parse_cql_sample_sheet(xlsx_path: str) -> List[Dict[str, str]]:
     if not col_amp:
         col_amp = next((c for c in df.columns if '序列' in str(c) and '索引' not in str(c)), None)
 
+    col_base_from = next((c for c in df.columns if '原始碱基' in str(c) or ('from' in str(c).lower() and 'base' in str(c).lower())), None)
+    col_base_to = next((c for c in df.columns if '修改后碱基' in str(c) or ('to' in str(c).lower() and 'base' in str(c).lower())), None)
+
     for _, row in df.iterrows():
         s_name = str(row[col_name]).strip() if pd.notna(row[col_name]) else ""
         if not s_name or s_name.lower() == 'nan':
@@ -52,29 +55,32 @@ def parse_cql_sample_sheet(xlsx_path: str) -> List[Dict[str, str]]:
         s_idx2 = str(row[col_idx2]).strip() if col_idx2 and pd.notna(row[col_idx2]) else ""
         s_sg = str(row[col_sg]).strip().upper() if col_sg and pd.notna(row[col_sg]) else ""
         s_amp = str(row[col_amp]).strip().upper() if col_amp and pd.notna(row[col_amp]) else ""
+        raw_from = str(row[col_base_from]).strip().upper() if col_base_from and pd.notna(row[col_base_from]) else ""
+        raw_to = str(row[col_base_to]).strip().upper() if col_base_to and pd.notna(row[col_base_to]) else ""
 
         # Auto-detect mode based on description prefix:
         # ABE -> BE (A to G)
         # CBE -> BE (C to T)
         # CUT -> NHEJ
         desc_upper = s_desc.upper()
-        if desc_upper.startswith("ABE"):
-            mode = "Base Editing (BE)"
-            base_from = "A"
-            base_to = "G"
-        elif desc_upper.startswith("CBE"):
-            mode = "Base Editing (BE)"
-            base_from = "C"
-            base_to = "T"
-        elif desc_upper.startswith("CUT"):
+        if desc_upper.startswith("CUT") or "CUT" in desc_upper:
             mode = "NHEJ"
             base_from = "C"
             base_to = "T"
         else:
-            # Default fallback if prefix is omitted
             mode = "Base Editing (BE)"
-            base_from = "A"
-            base_to = "G"
+            if raw_from and raw_from.lower() != 'nan' and raw_to and raw_to.lower() != 'nan':
+                base_from = raw_from
+                base_to = raw_to
+            elif desc_upper.startswith("ABE") or "ABE" in desc_upper:
+                base_from = "A"
+                base_to = "G"
+            elif desc_upper.startswith("CBE") or "CBE" in desc_upper:
+                base_from = "C"
+                base_to = "T"
+            else:
+                base_from = raw_from if raw_from and raw_from.lower() != 'nan' else "A"
+                base_to = raw_to if raw_to and raw_to.lower() != 'nan' else "G"
 
         samples.append({
             'name': s_name,
