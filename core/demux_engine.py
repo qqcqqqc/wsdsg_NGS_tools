@@ -160,7 +160,7 @@ def get_optimal_temp_dir() -> str:
     return os.path.abspath(tmp_dir)
 
 def create_bidirectional_barcodes_fasta(lib: str, samples: List[Dict[str, str]], tmp_dir: str) -> Tuple[str, str]:
-    """Generate dual-direction FASTA barcode files for cutadapt matching with 5' ^ anchoring."""
+    """Generate dual-direction FASTA barcode files for cutadapt matching."""
     r1_fa = os.path.abspath(os.path.join(tmp_dir, f".barcodes_R1_{lib}.fa"))
     r2_fa = os.path.abspath(os.path.join(tmp_dir, f".barcodes_R2_{lib}.fa"))
     
@@ -170,17 +170,13 @@ def create_bidirectional_barcodes_fasta(lib: str, samples: List[Dict[str, str]],
             c_idx1 = s['idx1'].strip().upper()
             c_idx2 = s['idx2'].strip().upper()
             
-            # Enforce 5' anchoring with ^ to eliminate internal partial matches and cross-talk chimeras
-            c_idx1_anchored = c_idx1 if c_idx1.startswith('^') else f"^{c_idx1}"
-            c_idx2_anchored = c_idx2 if c_idx2.startswith('^') else f"^{c_idx2}"
-            
             name_fwd = f"{base_name}_FWD"
-            f1.write(f">{name_fwd}\n{c_idx1_anchored}\n")
-            f2.write(f">{name_fwd}\n{c_idx2_anchored}\n")
+            f1.write(f">{name_fwd}\n{c_idx1}\n")
+            f2.write(f">{name_fwd}\n{c_idx2}\n")
             
             name_rev = f"{base_name}_REV"
-            f1.write(f">{name_rev}\n{c_idx2_anchored}\n")
-            f2.write(f">{name_rev}\n{c_idx1_anchored}\n")
+            f1.write(f">{name_rev}\n{c_idx2}\n")
+            f2.write(f">{name_rev}\n{c_idx1}\n")
             
     return r1_fa, r2_fa
 
@@ -242,10 +238,14 @@ def run_demux_pipeline(
             out_r1_pattern = os.path.abspath(os.path.join(tmp_dir, "{name}_R1.fastq.gz"))
             out_r2_pattern = os.path.abspath(os.path.join(tmp_dir, "{name}_R2.fastq.gz"))
             
+            # 动态计算该文库中最小的 Index 长度，作为 -O 最小重叠阈值，杜绝短片段假阳性同时允许前缀剔除容错
+            min_barcode_len = min(min(len(s['idx1'].strip()), len(s['idx2'].strip())) for s in samples) if samples else 10
+
             cmd = [
                 "cutadapt",
                 "-j", "0",
-                "-e", str(error_rate)
+                "-e", str(error_rate),
+                "-O", str(min_barcode_len)
             ]
             if no_indels:
                 cmd.append("--no-indels")
