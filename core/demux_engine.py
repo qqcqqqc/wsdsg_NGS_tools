@@ -160,23 +160,27 @@ def get_optimal_temp_dir() -> str:
     return os.path.abspath(tmp_dir)
 
 def create_bidirectional_barcodes_fasta(lib: str, samples: List[Dict[str, str]], tmp_dir: str) -> Tuple[str, str]:
-    """Generate dual-direction FASTA barcode files for cutadapt matching."""
+    """Generate dual-direction FASTA barcode files for cutadapt matching with 5' ^ anchoring."""
     r1_fa = os.path.abspath(os.path.join(tmp_dir, f".barcodes_R1_{lib}.fa"))
     r2_fa = os.path.abspath(os.path.join(tmp_dir, f".barcodes_R2_{lib}.fa"))
     
     with open(r1_fa, 'w') as f1, open(r2_fa, 'w') as f2:
         for s in samples:
             base_name = f"{s['name']}_on_{lib}"
-            c_idx1 = s['idx1']
-            c_idx2 = s['idx2']
+            c_idx1 = s['idx1'].strip().upper()
+            c_idx2 = s['idx2'].strip().upper()
+            
+            # Enforce 5' anchoring with ^ to eliminate internal partial matches and cross-talk chimeras
+            c_idx1_anchored = c_idx1 if c_idx1.startswith('^') else f"^{c_idx1}"
+            c_idx2_anchored = c_idx2 if c_idx2.startswith('^') else f"^{c_idx2}"
             
             name_fwd = f"{base_name}_FWD"
-            f1.write(f">{name_fwd}\n{c_idx1}\n")
-            f2.write(f">{name_fwd}\n{c_idx2}\n")
+            f1.write(f">{name_fwd}\n{c_idx1_anchored}\n")
+            f2.write(f">{name_fwd}\n{c_idx2_anchored}\n")
             
             name_rev = f"{base_name}_REV"
-            f1.write(f">{name_rev}\n{c_idx2}\n")
-            f2.write(f">{name_rev}\n{c_idx1}\n")
+            f1.write(f">{name_rev}\n{c_idx2_anchored}\n")
+            f2.write(f">{name_rev}\n{c_idx1_anchored}\n")
             
     return r1_fa, r2_fa
 
@@ -275,13 +279,17 @@ def run_demux_pipeline(
                     
                     has_data = False
                     with open(target_r1, 'wb') as f_r1, open(target_r2, 'wb') as f_r2:
-                        if os.path.exists(fwd_r1):
+                        if os.path.exists(fwd_r1) and os.path.getsize(fwd_r1) > 0:
                             with open(fwd_r1, 'rb') as in1: f_r1.write(in1.read())
                             with open(fwd_r2, 'rb') as in2: f_r2.write(in2.read())
                             has_data = True
-                        if os.path.exists(rev_r1):
-                            with open(rev_r1, 'rb') as in1: f_r1.write(in1.read())
-                            with open(rev_r2, 'rb') as in2: f_r2.write(in2.read())
+                        if os.path.exists(rev_r1) and os.path.getsize(rev_r1) > 0:
+                            # 保证链方向与引物位置完全一致：
+                            # 正向中 fwd_r1 对应 Index1/Primer1，fwd_r2 对应 Index2/Primer2
+                            # 反向中 rev_r2 对应 Index1/Primer1，rev_r1 对应 Index2/Primer2
+                            # 故合并时将 rev_r2 汇入 target_r1，rev_r1 汇入 target_r2
+                            with open(rev_r2, 'rb') as in2: f_r1.write(in2.read())
+                            with open(rev_r1, 'rb') as in1: f_r2.write(in1.read())
                             has_data = True
                             
                     if has_data:
