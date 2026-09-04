@@ -43,3 +43,7 @@ ENV/
 /CQL_Pipeline_Output/
 /for_testing/
 /test_*.xlsx
+
+# Assistant config
+.gemini/
+
