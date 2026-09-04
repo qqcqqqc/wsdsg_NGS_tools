@@ -232,8 +232,23 @@ def run_demux_pipeline(
         if log_callback:
             log_callback(f"  [I/O 策略] 使用临时缓存目录: {tmp_dir}\n")
 
+        # 聚类共用相同 Barcode 配对的样本（多 sg 同扩增子）
+        barcode_groups = defaultdict(list)
+        for s in samples:
+            b_key = (s['idx1'].strip().upper(), s['idx2'].strip().upper())
+            rev_key = (b_key[1], b_key[0])
+            if rev_key in barcode_groups:
+                barcode_groups[rev_key].append(s)
+            else:
+                barcode_groups[b_key].append(s)
+
+        unique_samples = [group[0] for group in barcode_groups.values()]
+        shared_cnt = len(samples) - len(unique_samples)
+        if log_callback and shared_cnt > 0:
+            log_callback(f"  [智能识别] 发现 {shared_cnt} 个共用 Barcode 扩增子的样本（多 sg 同扩增子），拆分后将自动同步产出对应 FASTQ\n")
+
         try:
-            r1_fa, r2_fa = create_bidirectional_barcodes_fasta(lib, samples, tmp_dir)
+            r1_fa, r2_fa = create_bidirectional_barcodes_fasta(lib, unique_samples, tmp_dir)
             
             out_r1_pattern = os.path.abspath(os.path.join(tmp_dir, "{name}_R1.fastq.gz"))
             out_r2_pattern = os.path.abspath(os.path.join(tmp_dir, "{name}_R2.fastq.gz"))
@@ -264,11 +279,12 @@ def run_demux_pipeline(
             
             if ret_code == 0:
                 if log_callback:
-                    log_callback(f"[OK] {lib} cutadapt 拆分完成，正在合并双向 Reads...\n")
+                    log_callback(f"[OK] {lib} cutadapt 拆分完成，正在合并双向 Reads 并同步共享样本...\n")
                 
                 merged_count = 0
-                for s in samples:
-                    base_name = f"{s['name']}_on_{lib}"
+                for group in barcode_groups.values():
+                    primary_s = group[0]
+                    base_name = f"{primary_s['name']}_on_{lib}"
                     fwd_r1 = os.path.join(tmp_dir, f"{base_name}_FWD_R1.fastq.gz")
                     rev_r1 = os.path.join(tmp_dir, f"{base_name}_REV_R1.fastq.gz")
                     fwd_r2 = os.path.join(tmp_dir, f"{base_name}_FWD_R2.fastq.gz")
@@ -279,11 +295,11 @@ def run_demux_pipeline(
                     
                     has_data = False
                     with open(target_r1, 'wb') as f_r1, open(target_r2, 'wb') as f_r2:
-                        if os.path.exists(fwd_r1) and os.path.getsize(fwd_r1) > 0:
+                        if os.path.exists(fwd_r1) and os.path.getsize(fwd_r1) > 50:
                             with open(fwd_r1, 'rb') as in1: f_r1.write(in1.read())
                             with open(fwd_r2, 'rb') as in2: f_r2.write(in2.read())
                             has_data = True
-                        if os.path.exists(rev_r1) and os.path.getsize(rev_r1) > 0:
+                        if os.path.exists(rev_r1) and os.path.getsize(rev_r1) > 50:
                             # 保证链方向与引物位置完全一致：
                             # 正向中 fwd_r1 对应 Index1/Primer1，fwd_r2 对应 Index2/Primer2
                             # 反向中 rev_r2 对应 Index1/Primer1，rev_r1 对应 Index2/Primer2
@@ -295,9 +311,27 @@ def run_demux_pipeline(
                     if has_data:
                         merged_count += 1
                         generated_files.extend([target_r1, target_r2])
+                        
+                        # 自动同步复制给共享该 Barcode 的其他样本（如同一扩增子不同 sgRNA）
+                        for sib in group[1:]:
+                            sib_base = f"{sib['name']}_on_{lib}"
+                            sib_r1 = os.path.join(output_dir, f"{sib_base}_R1.fastq.gz")
+                            sib_r2 = os.path.join(output_dir, f"{sib_base}_R2.fastq.gz")
+                            shutil.copyfile(target_r1, sib_r1)
+                            shutil.copyfile(target_r2, sib_r2)
+                            generated_files.extend([sib_r1, sib_r2])
+                            merged_count += 1
+                            if log_callback:
+                                log_callback(f"  ├ [共享扩增子] 样本 {sib['name']} 与 {primary_s['name']} 共享同一扩增子，已自动同步生成独立 FASTQ\n")
                     else:
                         if os.path.exists(target_r1): os.remove(target_r1)
                         if os.path.exists(target_r2): os.remove(target_r2)
+                        for sib in group[1:]:
+                            sib_base = f"{sib['name']}_on_{lib}"
+                            sib_r1 = os.path.join(output_dir, f"{sib_base}_R1.fastq.gz")
+                            sib_r2 = os.path.join(output_dir, f"{sib_base}_R2.fastq.gz")
+                            if os.path.exists(sib_r1): os.remove(sib_r1)
+                            if os.path.exists(sib_r2): os.remove(sib_r2)
                         
                 if log_callback:
                     log_callback(f"[OK] 文库 {lib} 成功写出 {merged_count} 个样本文件到 {output_dir}\n")
