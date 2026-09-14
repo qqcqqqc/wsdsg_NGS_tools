@@ -273,7 +273,8 @@ class DemuxTab(QWidget):
                     self.table.insertRow(row_idx)
                     self.table.setItem(row_idx, 0, QTableWidgetItem(s['name']))
                     self.table.setItem(row_idx, 1, QTableWidgetItem(""))
-                    self.table.setItem(row_idx, 2, QTableWidgetItem(lib))
+                    pool_display = lib if len(s.get('pools', [])) <= 1 else f"{lib} (跨库: {s['clean_pool_tag']})"
+                    self.table.setItem(row_idx, 2, QTableWidgetItem(pool_display))
                     self.table.setItem(row_idx, 3, QTableWidgetItem("idx1"))
                     self.table.setItem(row_idx, 4, QTableWidgetItem(s['idx1']))
                     self.table.setItem(row_idx, 5, QTableWidgetItem("idx2"))

@@ -43,18 +43,36 @@ def parse_excel_sample_sheet(xlsx_path: str) -> Dict[str, List[Dict[str, str]]]:
         if col_name and col_idx1 and col_idx2:
             for _, row in df.iterrows():
                 name = str(row[col_name]).strip() if pd.notna(row[col_name]) else ""
-                lib = str(row[col_pool]).strip() if col_pool and pd.notna(row[col_pool]) else ""
-                if not lib or lib.lower() == 'nan':
-                    lib = "Default_Pool"
+                raw_pool = str(row[col_pool]).strip() if col_pool and pd.notna(row[col_pool]) else ""
+                if not raw_pool or raw_pool.lower() == 'nan':
+                    raw_pool = "Default_Pool"
                 idx1 = str(row[col_idx1]).strip() if pd.notna(row[col_idx1]) else ""
                 idx2 = str(row[col_idx2]).strip() if pd.notna(row[col_idx2]) else ""
 
                 if name and name.lower() != 'nan' and idx1 and idx2 and idx1.lower() != 'nan' and idx2.lower() != 'nan':
-                    lib_samples[lib].append({
+                    raw_pools = [p.strip() for p in re.split(r'[,，;；]+', raw_pool) if p.strip()]
+                    seen_pools = set()
+                    pools = []
+                    for p in raw_pools:
+                        if p not in seen_pools:
+                            seen_pools.add(p)
+                            pools.append(p)
+                    if not pools:
+                        pools = ["Default_Pool"]
+
+                    clean_pool_tag = "_".join(pools)
+                    target_base = f"{name}_on_{clean_pool_tag}"
+
+                    sample_item = {
                         'name': name,
                         'idx1': idx1,
                         'idx2': idx2,
-                    })
+                        'pools': pools,
+                        'clean_pool_tag': clean_pool_tag,
+                        'target_base': target_base,
+                    }
+                    for p in pools:
+                        lib_samples[p].append(sample_item)
             if lib_samples:
                 return dict(lib_samples)
     except Exception as e:
@@ -70,7 +88,7 @@ def parse_excel_sample_sheet(xlsx_path: str) -> Dict[str, List[Dict[str, str]]]:
             if not row or len(row) < 4:
                 continue
             name = str(row[1]).strip() if row[1] is not None else ""
-            lib = str(row[3]).strip() if row[3] is not None else "Default_Pool"
+            raw_pool = str(row[3]).strip() if row[3] is not None else "Default_Pool"
             idx1 = str(row[5]).strip() if len(row) > 5 and row[5] is not None else ""
             idx2 = str(row[7]).strip() if len(row) > 7 and row[7] is not None else ""
             
@@ -78,11 +96,29 @@ def parse_excel_sample_sheet(xlsx_path: str) -> Dict[str, List[Dict[str, str]]]:
                 continue
                 
             if idx1 and idx2 and idx1 != 'None' and idx2 != 'None':
-                lib_samples[lib].append({
+                raw_pools = [p.strip() for p in re.split(r'[,，;；]+', raw_pool) if p.strip()]
+                seen_pools = set()
+                pools = []
+                for p in raw_pools:
+                    if p not in seen_pools:
+                        seen_pools.add(p)
+                        pools.append(p)
+                if not pools:
+                    pools = ["Default_Pool"]
+
+                clean_pool_tag = "_".join(pools)
+                target_base = f"{name}_on_{clean_pool_tag}"
+
+                sample_item = {
                     'name': name,
                     'idx1': idx1,
                     'idx2': idx2,
-                })
+                    'pools': pools,
+                    'clean_pool_tag': clean_pool_tag,
+                    'target_base': target_base,
+                }
+                for p in pools:
+                    lib_samples[p].append(sample_item)
         if lib_samples:
             return dict(lib_samples)
     except Exception:
@@ -107,10 +143,15 @@ def find_library_fastq_pairs(fastq_dir: str, lib_name: str) -> Tuple[Optional[st
     if lib_name and lib_name != 'Default_Pool':
         lib_lower = lib_name.lower()
         
-        # Priority 1: Exact substring match
-        matching_files = [f for f in all_fq_files if lib_lower in f.lower()]
+        # Priority 1: Exact token boundary match (e.g. CR1 matches CR1-xxx, CR1_xxx, but NOT CR10-xxx)
+        boundary_pattern = re.compile(rf"(?:^|[_\-.])({re.escape(lib_lower)})(?:[_\-.]|$)", re.IGNORECASE)
+        matching_files = [f for f in all_fq_files if boundary_pattern.search(f)]
         
-        # Priority 2: Token match (split by - or _)
+        # Priority 2: Exact substring match
+        if not matching_files:
+            matching_files = [f for f in all_fq_files if lib_lower in f.lower()]
+        
+        # Priority 3: Token match (split by - or _)
         if not matching_files:
             tokens = [t for t in re.split(r'[-_.]', lib_lower) if len(t) >= 2]
             for token in tokens:
@@ -119,14 +160,14 @@ def find_library_fastq_pairs(fastq_dir: str, lib_name: str) -> Tuple[Optional[st
                     matching_files = matched
                     break
 
-        # Priority 3: Check if FASTQ filename prefix is contained inside lib_name
+        # Priority 4: Check if FASTQ filename prefix is contained inside lib_name
         if not matching_files:
             for f in all_fq_files:
                 f_prefix = re.split(r'[_.-](?:R?1|R?2|001)', f, flags=re.IGNORECASE)[0].lower()
                 if len(f_prefix) >= 2 and (f_prefix in lib_lower or lib_lower in f_prefix):
                     matching_files.append(f)
 
-    # Fallback Priority 4: Single library folder fallback
+    # Fallback Priority 5: Single library folder fallback
     if not matching_files:
         matching_files = all_fq_files
 
@@ -205,14 +246,35 @@ def run_demux_pipeline(
     lib_samples = parse_excel_sample_sheet(excel_path)
     total_libs = len(lib_samples)
     
+    multi_pool_samples = set()
+    all_target_bases = set()
+    for samples in lib_samples.values():
+        for s in samples:
+            t_base = s.get('target_base', f"{s['name']}_on_Default_Pool")
+            all_target_bases.add(t_base)
+            if len(s.get('pools', [])) > 1:
+                multi_pool_samples.add((s['name'], s['clean_pool_tag']))
+
     if log_callback:
         log_callback(f"[INFO] 识别到文库数: {total_libs}\n")
         for lib, samples in lib_samples.items():
             log_callback(f"  ├ 文库 {lib}: {len(samples)} 个 UDI 样本\n")
+        if multi_pool_samples:
+            log_callback(f"  [智能跨库合并] 发现 {len(multi_pool_samples)} 个跨多文库样本，拆分时将自动汇入同一 FASTQ：\n")
+            for s_name, pool_tag in sorted(multi_pool_samples):
+                log_callback(f"    • {s_name} -> 跨库标签 [{pool_tag}]\n")
 
     os.makedirs(output_dir, exist_ok=True)
-    generated_files = []
-    
+    # 预先清理本次运行的目标输出文件，杜绝断点重跑或重新执行时 'ab' 追加写入脏数据
+    for t_base in all_target_bases:
+        for r_ext in ['_R1.fastq.gz', '_R2.fastq.gz']:
+            f_path = os.path.join(output_dir, f"{t_base}{r_ext}")
+            if os.path.exists(f_path):
+                try:
+                    os.remove(f_path)
+                except Exception:
+                    pass
+
     for lib_idx, (lib, samples) in enumerate(lib_samples.items(), start=1):
         if progress_callback:
             progress_callback(lib_idx - 1, total_libs)
@@ -279,7 +341,7 @@ def run_demux_pipeline(
             
             if ret_code == 0:
                 if log_callback:
-                    log_callback(f"[OK] {lib} cutadapt 拆分完成，正在合并双向 Reads 并同步共享样本...\n")
+                    log_callback(f"[OK] {lib} cutadapt 拆分完成，正在合并双向 Reads 并写入/同步样本 FASTQ...\n")
                 
                 merged_count = 0
                 for group in barcode_groups.values():
@@ -290,51 +352,48 @@ def run_demux_pipeline(
                     fwd_r2 = os.path.join(tmp_dir, f"{base_name}_FWD_R2.fastq.gz")
                     rev_r2 = os.path.join(tmp_dir, f"{base_name}_REV_R2.fastq.gz")
                     
-                    target_r1 = os.path.join(output_dir, f"{base_name}_R1.fastq.gz")
-                    target_r2 = os.path.join(output_dir, f"{base_name}_R2.fastq.gz")
+                    part_r1_chunks = []
+                    part_r2_chunks = []
                     
-                    has_data = False
-                    with open(target_r1, 'wb') as f_r1, open(target_r2, 'wb') as f_r2:
-                        if os.path.exists(fwd_r1) and os.path.getsize(fwd_r1) > 50:
-                            with open(fwd_r1, 'rb') as in1: f_r1.write(in1.read())
-                            with open(fwd_r2, 'rb') as in2: f_r2.write(in2.read())
-                            has_data = True
-                        if os.path.exists(rev_r1) and os.path.getsize(rev_r1) > 50:
-                            # 保证链方向与引物位置完全一致：
-                            # 正向中 fwd_r1 对应 Index1/Primer1，fwd_r2 对应 Index2/Primer2
-                            # 反向中 rev_r2 对应 Index1/Primer1，rev_r1 对应 Index2/Primer2
-                            # 故合并时将 rev_r2 汇入 target_r1，rev_r1 汇入 target_r2
-                            with open(rev_r2, 'rb') as in2: f_r1.write(in2.read())
-                            with open(rev_r1, 'rb') as in1: f_r2.write(in1.read())
-                            has_data = True
+                    if os.path.exists(fwd_r1) and os.path.getsize(fwd_r1) > 50:
+                        with open(fwd_r1, 'rb') as in1:
+                            part_r1_chunks.append(in1.read())
+                        with open(fwd_r2, 'rb') as in2:
+                            part_r2_chunks.append(in2.read())
                             
-                    if has_data:
-                        merged_count += 1
-                        generated_files.extend([target_r1, target_r2])
-                        
-                        # 自动同步复制给共享该 Barcode 的其他样本（如同一扩增子不同 sgRNA）
-                        for sib in group[1:]:
-                            sib_base = f"{sib['name']}_on_{lib}"
-                            sib_r1 = os.path.join(output_dir, f"{sib_base}_R1.fastq.gz")
-                            sib_r2 = os.path.join(output_dir, f"{sib_base}_R2.fastq.gz")
-                            shutil.copyfile(target_r1, sib_r1)
-                            shutil.copyfile(target_r2, sib_r2)
-                            generated_files.extend([sib_r1, sib_r2])
+                    if os.path.exists(rev_r1) and os.path.getsize(rev_r1) > 50:
+                        # 保证链方向与引物位置完全一致：
+                        # 正向中 fwd_r1 对应 Index1/Primer1，fwd_r2 对应 Index2/Primer2
+                        # 反向中 rev_r2 对应 Index1/Primer1，rev_r1 对应 Index2/Primer2
+                        # 故合并时将 rev_r2 汇入 target_r1，rev_r1 汇入 target_r2
+                        with open(rev_r2, 'rb') as in2:
+                            part_r1_chunks.append(in2.read())
+                        with open(rev_r1, 'rb') as in1:
+                            part_r2_chunks.append(in1.read())
+                            
+                    if part_r1_chunks and part_r2_chunks:
+                        # 对于该 Barcode 组下的所有样本（包含共享同一扩增子的多个 sg 样本）
+                        for s in group:
+                            target_base = s.get('target_base', f"{s['name']}_on_{lib}")
+                            target_r1 = os.path.join(output_dir, f"{target_base}_R1.fastq.gz")
+                            target_r2 = os.path.join(output_dir, f"{target_base}_R2.fastq.gz")
+                            
+                            # 使用 'ab' 二进制追加模式写出，支持单库写入及跨多库流式无缝合并
+                            with open(target_r1, 'ab') as out1, open(target_r2, 'ab') as out2:
+                                for c in part_r1_chunks:
+                                    out1.write(c)
+                                for c in part_r2_chunks:
+                                    out2.write(c)
+                                    
                             merged_count += 1
                             if log_callback:
-                                log_callback(f"  ├ [共享扩增子] 样本 {sib['name']} 与 {primary_s['name']} 共享同一扩增子，已自动同步生成独立 FASTQ\n")
-                    else:
-                        if os.path.exists(target_r1): os.remove(target_r1)
-                        if os.path.exists(target_r2): os.remove(target_r2)
-                        for sib in group[1:]:
-                            sib_base = f"{sib['name']}_on_{lib}"
-                            sib_r1 = os.path.join(output_dir, f"{sib_base}_R1.fastq.gz")
-                            sib_r2 = os.path.join(output_dir, f"{sib_base}_R2.fastq.gz")
-                            if os.path.exists(sib_r1): os.remove(sib_r1)
-                            if os.path.exists(sib_r2): os.remove(sib_r2)
+                                if s is not primary_s:
+                                    log_callback(f"  ├ [共享扩增子] 样本 {s['name']} 与 {primary_s['name']} 共享同一扩增子，已自动同步写出/汇入 {os.path.basename(target_r1)}\n")
+                                elif len(s.get('pools', [])) > 1:
+                                    log_callback(f"  ├ [跨库合并] 样本 {s['name']} (跨库: {s['clean_pool_tag']}) 文库 {lib} 数据已汇入 {os.path.basename(target_r1)}\n")
                         
                 if log_callback:
-                    log_callback(f"[OK] 文库 {lib} 成功写出 {merged_count} 个样本文件到 {output_dir}\n")
+                    log_callback(f"[OK] 文库 {lib} 成功处理 {merged_count} 个样本条目\n")
             else:
                 if log_callback:
                     log_callback(f"[FAIL] 文库 {lib} 拆分失败 (Exit code: {ret_code})\n")
@@ -346,10 +405,25 @@ def run_demux_pipeline(
                 except Exception:
                     pass
 
+    # 汇总有效输出文件并清理空文件
+    generated_files = []
+    for t_base in sorted(all_target_bases):
+        r1 = os.path.join(output_dir, f"{t_base}_R1.fastq.gz")
+        r2 = os.path.join(output_dir, f"{t_base}_R2.fastq.gz")
+        if os.path.exists(r1) and os.path.exists(r2):
+            if os.path.getsize(r1) > 50 and os.path.getsize(r2) > 50:
+                generated_files.extend([r1, r2])
+            else:
+                try: os.remove(r1)
+                except Exception: pass
+                try: os.remove(r2)
+                except Exception: pass
+
     if progress_callback:
         progress_callback(total_libs, total_libs)
 
     if log_callback:
-        log_callback(f"\n[COMPLETE] 全部拆分工作完成！共生成 {len(generated_files)} 个 FASTQ.GZ 文件。\n")
+        multi_info = f"（包含 {len(multi_pool_samples)} 个跨库合并样本）" if multi_pool_samples else ""
+        log_callback(f"\n[COMPLETE] 全部拆分工作完成！共生成 {len(generated_files)} 个 FASTQ.GZ 文件{multi_info}。\n")
 
     return generated_files
