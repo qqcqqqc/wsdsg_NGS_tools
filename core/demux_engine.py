@@ -262,7 +262,7 @@ def run_demux_pipeline(
         if multi_pool_samples:
             log_callback(f"  [智能跨库合并] 发现 {len(multi_pool_samples)} 个跨多文库样本，拆分时将自动汇入同一 FASTQ：\n")
             for s_name, pool_tag in sorted(multi_pool_samples):
-                log_callback(f"    • {s_name} -> 跨库标签 [{pool_tag}]\n")
+                log_callback(f"    - {s_name} -> 跨库标签 [{pool_tag}]\n")
 
     os.makedirs(output_dir, exist_ok=True)
     # 预先清理本次运行的目标输出文件，杜绝断点重跑或重新执行时 'ab' 追加写入脏数据
