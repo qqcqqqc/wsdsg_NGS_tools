@@ -70,6 +70,31 @@
 
 ---
 
+### 📈 结果汇总指标快速解读指南
+
+分析完成后输出的汇总 Excel 表格中，各项生物学指标定义如下：
+
+#### 1. 敲除与移码分析指标 (NHEJ 汇总表 / BE Sheet 4)
+* **`TotalIndels`（总 Indel 突变率）**：
+  $$\text{TotalIndels} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}$$
+  反映所有发生插入/缺失的总效率。
+* **`Indels_non3n`（非 3n 移码 Indel 突变率）**：
+  $$\text{Indels\_non3n} = \frac{\text{非 3 的倍数 Indels (即 } 3n+1 \text{ 与 } 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}$$
+  插入缺失碱基数非 3 的倍数会导致翻译阅读框移码（Frameshift），造成蛋白失活。评估**基因敲除（KO）破坏有效性**时看此指标。
+* **`Indels_without_subs`（排除点突变背景的 Indel 率）**：
+  $$\text{Indels\_without\_subs} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{WT} + \text{全部 Indels}} \quad \text{(分母去掉了 Substitutions)}$$
+  **分子依然是所有 Indels**，所谓的 `without_subs` 是指**分母去除了纯单碱基替换（Substitutions）**。由于测序和 PCR 会自带微量（0.1%~1%）点突变噪音，剔除该噪音可更真实反映纯净扩增子中的 Indel 占比。
+
+#### 2. 碱基编辑分析指标 (BE 汇总表)
+* **列 `1, 2, 3 ... 20`（目标编辑效率）**：
+  记录 sgRNA 第 1 到第 20 位上**目标产物**的突变效率（例如 ABE 中 $A \to G$、CBE 中 $C \to T$）。
+* **列 `u1, u2, u3 ... u20`（非预期杂突变率 / Bystander Unwanted Mutation）**：
+  `u` 代表 **Unspecified**，记录对应位点上突变成**除原始碱基和目标产物之外的其他杂碱基**的比例。
+  * **在 ABE ($A \to G$) 中**：原始是 $A$，目标是 $G$，`u` 列即为突变为 **$C$ 或 $T$** 的杂产物比例。
+  * **在 CBE ($C \to T$) 中**：原始是 $C$，目标是 $T$，`u` 列即为突变为 **$A$ 或 $G$** 的杂产物比例。
+
+---
+
 ## 🚀 极速启动指南 (戴夫强烈推荐源代码版！)
 
 > 💡 **关键提示（所有人必读）**：
