@@ -76,14 +76,25 @@
 
 #### 1. 敲除与移码分析指标 (NHEJ 汇总表 / BE Sheet 4)
 * **`TotalIndels`（总 Indel 突变率）**：
-  $$\text{TotalIndels} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}$$
-  反映所有发生插入/缺失的总效率。
+  反映全部测序读段中发生插入或缺失的整体百分比。
+
+  $$
+  \text{TotalIndels} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}
+  $$
+
 * **`Indels_non3n`（非 3n 移码 Indel 突变率）**：
-  $$\text{Indels\_non3n} = \frac{\text{非 3 的倍数 Indels (即 } 3n+1 \text{ 与 } 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}$$
   插入缺失碱基数非 3 的倍数会导致翻译阅读框移码（Frameshift），造成蛋白失活。评估**基因敲除（KO）破坏有效性**时看此指标。
+
+  $$
+  \text{Indels}_{\text{non-3n}} = \frac{\text{非 3 的倍数 Indels (即 } 3n+1 \text{ 与 } 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}
+  $$
+
 * **`Indels_without_subs`（排除点突变背景的 Indel 率）**：
-  $$\text{Indels\_without\_subs} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{WT} + \text{全部 Indels}} \quad \text{(分母去掉了 Substitutions)}$$
-  **分子依然是所有 Indels**，所谓的 `without_subs` 是指**分母去除了纯单碱基替换（Substitutions）**。由于测序和 PCR 会自带微量（0.1%~1%）点突变噪音，剔除该噪音可更真实反映纯净扩增子中的 Indel 占比。
+  分子依然是所有 Indels，所谓 `without_subs` 是指**分母去除了纯单碱基替换（Substitutions）**。由于测序和 PCR 会自带微量（0.1%~1%）点突变噪音，剔除该噪音可更真实反映纯净扩增子中的 Indel 占比。
+
+  $$
+  \text{Indels}_{\text{without-subs}} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{WT} + \text{全部 Indels}}
+  $$
 
 #### 2. 碱基编辑分析指标 (BE 汇总表)
 * **列 `1, 2, 3 ... 20`（目标编辑效率）**：
