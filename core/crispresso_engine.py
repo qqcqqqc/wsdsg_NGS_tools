@@ -296,11 +296,11 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str, log_cal
                 "3. 3n+1 / 3n+2（移码突变读段数）：缺失或插入碱基数不是 3 的倍数（如 1, 2, 4, 5 bp）。会导致切割位点下游所有密码子错乱（Frameshift）并提前终止，是造成基因功能彻底破坏(KO)的核心突变。",
                 "4. Substitutions（纯单碱基替换读段数）：在定量窗口内仅发生单碱基替换但无任何 Indel 的读段数（主要来源于测序或 PCR 错配噪音）。",
                 "5. TotalIndels（总 Indel 突变率%）：全部发生插入或缺失读段在总 Reads 中的比例。",
-                "   - 计算公式：TotalIndels = 全部 Indels (3n + 3n+1 + 3n+2) / (wt_allele + 全部 Indels + Substitutions)",
-                "6. Indels_non3n（移码突变率%）：所有引起蛋白移码的读段占总 Reads 的比例，是评估基因敲除破坏有效性的最关键金标准。",
+                "   - 计算公式：TotalIndels = 全部 Indels (3n + 3n+1 + 3n+2) / 总 Reads",
+                "6. Indels_non3n（移码突变率%）：所有引起蛋白阅读框移码的读段占总 Reads 的比例，是评估基因敲除破坏有效性的最关键金标准。",
                 "   - 计算公式：Indels_non3n = (3n+1_del + 3n+2_del + 3n+1_insert + 3n+2_insert) / 总 Reads",
                 "7. Indels_without_subs（排除点突变背景的 Indel 率%）：分母剔除纯单碱基替换噪音，更纯粹地反映 Cas 切割修复造成的 Indel 占比。",
-                "   - 计算公式：Indels_without_subs = 全部 Indels / (wt_allele + 全部 Indels)"
+                "   - 计算公式：Indels_without_subs = 全部 Indels / (总 Reads - Substitutions) 或 全部 Indels / (wt_allele + 全部 Indels)"
             ]
             for i, note in enumerate(notes):
                 ws.cell(row=note_start_row + i, column=1, value=note)
@@ -454,14 +454,17 @@ def compute_be_overall_editing_metrics(
         pct_pure_total = (pure_edited_reads / total_reads) if total_reads > 0 else 0.0
         pct_pure_non_indel = (pure_edited_reads / non_indel_reads) if non_indel_reads > 0 else 0.0
 
+        intact_reads = total_reads - indel_reads
         breakdown = {
             '总比对Reads': int(total_reads),
             '未编辑Reads': int(unedited_reads),
-            '未编辑率%': (unedited_reads / total_reads) if total_reads > 0 else 0.0,
             '无Indel突变Reads': int(pure_any_sub_reads),
-            '无Indel突变率%': (pure_any_sub_reads / total_reads) if total_reads > 0 else 0.0,
             '含Indel读段Reads': int(indel_reads),
+            '未编辑率%': (unedited_reads / total_reads) if total_reads > 0 else 0.0,
+            '无Indel突变率%': (pure_any_sub_reads / total_reads) if total_reads > 0 else 0.0,
             'Indel率%': (indel_reads / total_reads) if total_reads > 0 else 0.0,
+            '无Indel未编辑率%': (unedited_reads / intact_reads) if intact_reads > 0 else 0.0,
+            '无Indel总突变率%': (pure_any_sub_reads / intact_reads) if intact_reads > 0 else 0.0,
         }
 
         return pct_pure_total, pct_pure_non_indel, breakdown
@@ -602,9 +605,9 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, None, None, None)
             rec_breakdown = {
                 '样品名': s_name, '描述': s_desc,
-                '总比对Reads': 0, '未编辑Reads': 0, '未编辑率%': 0.0,
-                '无Indel突变Reads': 0, '无Indel突变率%': 0.0,
-                '含Indel读段Reads': 0, 'Indel率%': 0.0
+                '总比对Reads': 0, '未编辑Reads': 0, '无Indel突变Reads': 0, '含Indel读段Reads': 0,
+                '未编辑率%': 0.0, '无Indel突变率%': 0.0, 'Indel率%': 0.0,
+                '无Indel未编辑率%': 0.0, '无Indel总突变率%': 0.0
             }
             records_be_main.append(rec_main)
             records_be_sub1.append(rec_s1)
@@ -764,9 +767,9 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
         else:
             rec_breakdown = {
                 '样品名': s_name, '描述': s_desc,
-                '总比对Reads': 0, '未编辑Reads': 0, '未编辑率%': 0.0,
-                '无Indel突变Reads': 0, '无Indel突变率%': 0.0,
-                '含Indel读段Reads': 0, 'Indel率%': 0.0
+                '总比对Reads': 0, '未编辑Reads': 0, '无Indel突变Reads': 0, '含Indel读段Reads': 0,
+                '未编辑率%': 0.0, '无Indel突变率%': 0.0, 'Indel率%': 0.0,
+                '无Indel未编辑率%': 0.0, '无Indel总突变率%': 0.0
             }
         records_breakdown.append(rec_breakdown)
 
@@ -816,10 +819,10 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
 
         df_breakdown = pd.DataFrame(records_breakdown)
         breakdown_cols = [
-            '样品名', '描述', '总比对Reads',
-            '未编辑Reads', '未编辑率%',
-            '无Indel突变Reads', '无Indel突变率%',
-            '含Indel读段Reads', 'Indel率%'
+            '样品名', '描述',
+            '总比对Reads', '未编辑Reads', '无Indel突变Reads', '含Indel读段Reads',
+            '未编辑率%', '无Indel突变率%', 'Indel率%',
+            '无Indel未编辑率%', '无Indel总突变率%'
         ]
         existing_bd_cols = [c for c in breakdown_cols if c in df_breakdown.columns]
         df_breakdown = df_breakdown[existing_bd_cols]
@@ -917,11 +920,11 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 "3. 3n+1 / 3n+2（移码突变）：缺失或插入非 3 的倍数个碱基（如 1, 2, 4, 5 bp），引发密码子错乱（Frameshift）并提前终止，是造成基因功能破坏(KO)的核心突变。",
                 "4. Substitutions（纯替换读段数）：在靶区内仅发生单碱基替换而无任何 Indel 的读段数（主要来源于测序或 PCR 错配噪音）。",
                 "5. TotalIndels（总 Indel 突变率%）：全部发生插入或缺失读段在总 Reads 中的比例。",
-                "   - 计算公式：TotalIndels = 全部 Indels (3n + 3n+1 + 3n+2) / (wt_allele + 全部 Indels + Substitutions)",
-                "6. Indels_non3n（移码突变率%）：所有引起蛋白移码的读段占总 Reads 的比例，是评估基因敲除破坏有效性的最关键指标。",
+                "   - 计算公式：TotalIndels = 全部 Indels (3n + 3n+1 + 3n+2) / 总 Reads",
+                "6. Indels_non3n（移码突变率%）：所有引起蛋白阅读框移码的读段占总 Reads 的比例，是评估基因敲除破坏有效性的最关键指标。",
                 "   - 计算公式：Indels_non3n = (3n+1_del + 3n+2_del + 3n+1_insert + 3n+2_insert) / 总 Reads",
                 "7. Indels_without_subs（排除点突变背景的 Indel 率%）：分母剔除纯单碱基替换噪音，更纯粹反映切割修复造成的 Indel 占比。",
-                "   - 计算公式：Indels_without_subs = 全部 Indels / (wt_allele + 全部 Indels)"
+                "   - 计算公式：Indels_without_subs = 全部 Indels / (总 Reads - Substitutions) 或 全部 Indels / (wt_allele + 全部 Indels)"
             ]
             for i, note in enumerate(notes_ind):
                 ws_ind.cell(row=note_start_row_ind + i, column=1, value=note)
@@ -929,7 +932,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             # Write Sheet 5: sgRNA Reads Breakdown
             df_breakdown.to_excel(writer_obj, index=False, sheet_name=sheet_bd)
             ws_bd = writer_obj.sheets[sheet_bd]
-            pct_bd = ['未编辑率%', '无Indel突变率%', 'Indel率%']
+            pct_bd = ['未编辑率%', '无Indel突变率%', 'Indel率%', '无Indel未编辑率%', '无Indel总突变率%']
             col_bd_idx = [df_breakdown.columns.get_loc(c) + 1 for c in pct_bd if c in df_breakdown.columns]
             for row in range(2, len(df_breakdown) + 2):
                 for col_idx in col_bd_idx:
@@ -941,17 +944,27 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             note_start_row = len(df_breakdown) + 4
             notes = [
                 "【BE 靶区读段分类统计指标说明与计算公式】",
+                "一、读段分类计数（表格左侧数据）：",
                 "1. 未编辑Reads (Unedited Reads)：sgRNA 靶区内读段序列与参考基因组完全一致，未发生任何碱基替换(Sub)或插入缺失(Indel)。",
-                "   - 未编辑率% = 未编辑Reads / 总比对Reads",
                 "2. 无Indel突变Reads (Pure Substitution Reads)：sgRNA 靶区内读段未发生任何 Indel，但发生至少 1 个任意类型的碱基替换。",
-                "   - 无Indel突变率% = 无Indel突变Reads / 总比对Reads",
                 "3. 含Indel读段Reads (Indel Reads)：sgRNA 靶区内读段发生了至少 1 个插入或缺失(Indel)。",
-                "   - Indel率% = 含Indel读段Reads / 总比对Reads",
-                "4. 守恒关系：",
-                "   - 读段守恒：未编辑Reads + 无Indel突变Reads + 含Indel读段Reads = 总比对Reads",
-                "   - 比例守恒：未编辑率% + 无Indel突变率% + Indel率% = 100.00%",
-                "5. 与前序 Sheet【纯净编辑率%】的关系：",
-                "   - Sheet 1~3 的【纯净编辑率%】指发生“特定目标类型替换（如 A->G）且无 Indel”的比例，属于本表中【无Indel突变Reads】的一个目标子集。"
+                "",
+                "二、全局占比指标（分母为：总比对Reads）：",
+                "1. 未编辑率% = 未编辑Reads / 总比对Reads",
+                "2. 无Indel突变率% = 无Indel突变Reads / 总比对Reads",
+                "3. Indel率% = 含Indel读段Reads / 总比对Reads",
+                "• 全局守恒关系：未编辑Reads + 无Indel突变Reads + 含Indel读段Reads = 总比对Reads（对应三项百分比相加 = 100.00%）",
+                "",
+                "三、未破坏读段内部转化率（分母为：总比对Reads - 含Indel读段Reads，即无Indel的纯净读段池）：",
+                "1. 无Indel未编辑率% = 未编辑Reads / (总比对Reads - 含Indel读段Reads)",
+                "   - 意义：在所有未发生 Indel 破坏的读段中，完全保持野生型未被编辑的比例。",
+                "2. 无Indel总突变率% = 无Indel突变Reads / (总比对Reads - 含Indel读段Reads)",
+                "   - 意义：在所有未发生 Indel 破坏的读段中，成功发生脱氨基突变的整体转化效率。",
+                "• 内部守恒关系：无Indel未编辑率% + 无Indel总突变率% = 100.00%",
+                "",
+                "四、与 Sheet 1~3【纯净编辑率%】与【无Indel编辑率%】的关系：",
+                "• Sheet 1~3 的【纯净编辑率%】（目标替换 / 总比对Reads）是本表【无Indel突变率%】的目标特定子集。",
+                "• Sheet 1~3 的【无Indel编辑率%】（目标替换 / 无Indel Reads）是本表【无Indel总突变率%】的目标特定子集。"
             ]
             for i, note in enumerate(notes):
                 ws_bd.cell(row=note_start_row + i, column=1, value=note)
