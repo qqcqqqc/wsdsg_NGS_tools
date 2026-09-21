@@ -796,6 +796,33 @@ def get_crispresso_window_args(
 
     return args
 
+def refine_sample_plots(sample_out_dir: str, plot_left: int = 0, plot_right: int = 0, log_callback: Optional[Callable[[str], None]] = None):
+    """
+    Refines CRISPResso Figure 2b and Figure 9 to match exact custom bp window coordinates,
+    ensuring odd-length spans (e.g. +3) are rendered with 0 error instead of +4.
+    """
+    if plot_left < 0 or plot_right < 0:
+        return
+    refiner_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "crispresso_plot_refiner.py"))
+    if not os.path.exists(refiner_script):
+        return
+    
+    cmd = [
+        "python3",
+        win_to_wsl_path(refiner_script) if is_windows() else refiner_script,
+        "--run_dir",
+        win_to_wsl_path(sample_out_dir) if is_windows() else sample_out_dir,
+        "--plot_left", str(plot_left),
+        "--plot_right", str(plot_right)
+    ]
+    refine_code, refine_out = global_runner.run_cmd(cmd)
+    if refine_code == 0:
+        if log_callback:
+            log_callback("[INFO] 已精准校验并重绘 Figure 2b 与 Figure 9 窗口范围 (精确匹配 -/+ bp 设置)。\n")
+    else:
+        if log_callback and refine_out:
+            log_callback(f"[WARN] 窗口重绘校验跳过或遇到警告: {refine_out.strip()}\n")
+
 def run_crispresso_batch_pipeline(
     excel_path: str,
     fastq_dir: str,
@@ -941,6 +968,7 @@ def run_crispresso_batch_pipeline(
             ret_code, out_text = global_runner.run_cmd(retry_cmd, log_callback=log_callback)
 
         if ret_code == 0:
+            refine_sample_plots(sample_out_dir, cur_plot_left, cur_plot_right, log_callback=log_callback)
             if log_callback:
                 log_callback(f"[OK] 样本 {s_name} 分析完成！\n")
             processed_dirs.append(sample_out_dir)

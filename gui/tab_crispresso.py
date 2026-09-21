@@ -14,6 +14,7 @@ from core.crispresso_engine import (
     run_crispresso_batch_pipeline,
     run_summary_only_pipeline,
     get_crispresso_window_args,
+    refine_sample_plots,
     rc
 )
 
@@ -246,6 +247,7 @@ class CRISPRessoSingleWorker(QThread):
             ret_code, out_text = global_runner.run_cmd(cmd, log_callback=self._emit_log)
             
             if ret_code == 0:
+                refine_sample_plots(self.output_dir, self.plot_left, self.plot_right, log_callback=self._emit_log)
                 self._emit_log("\n[OK] CRISPResso2 分析顺利完成！\n")
                 self.finished_signal.emit(True, self.output_dir)
             else:
