@@ -98,8 +98,22 @@ $$
 $$
   
 #### 2. 碱基编辑分析指标 (BE 汇总表)
-* **列 `1, 2, 3 ... 20`（目标编辑效率）**：
-  记录 sgRNA 第 1 到第 20 位上**目标产物**的突变效率（例如 ABE 中 $A \to G$、CBE 中 $C \to T$）。
+* **`纯净编辑效率% (With Subs, No Indel / Total)`（绝对纯净编辑效率）**：
+  评估细胞或组织群体中获得**无副产物纯净目标编辑产物**的绝对百分比。要求在 sgRNA 靶区范围内**至少发生 1 个目标碱基替换**（如 ABE 的 $A \to G$，CBE 的 $C \to T$），且**在 sg 范围内完全没有发生任何 Indel 插入或缺失**。
+
+  $$
+  \text{纯净编辑效率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{所有有效比对 Reads (Total Aligned Reads)}}
+  $$
+
+* **`未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)`（未破坏序列中的编辑转化率）**：
+  剥离 Cas 蛋白双链切割产生的 Indel 副产物背景，专门评估脱氨酶本身的有效催化转化活性。分母剔除所有在 sg 范围内发生 Indel 的 Reads。
+
+  $$
+  \text{未破坏Reads中编辑率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{sg 范围内未发生任何 Indel 的 Reads (Intact Reads)}}
+  $$
+
+* **列 `1, 2, 3 ... 20`（单碱基位点目标编辑效率）**：
+  记录 sgRNA 第 1 到第 20 位（或更长）上每个具体位点的**目标产物**突变效率（例如 ABE 中 $A \to G$、CBE 中 $C \to T$）。
 * **列 `u1, u2, u3 ... u20`（非预期杂突变率 / Bystander Unwanted Mutation）**：
   `u` 代表 **Unspecified**，记录对应位点上突变成**除原始碱基和目标产物之外的其他杂碱基**的比例。
   * **在 ABE ($A \to G$) 中**：原始是 $A$，目标是 $G$，`u` 列即为突变为 **$C$ 或 $T$** 的杂产物比例。

@@ -294,10 +294,76 @@ class SummaryWorkerThread(QThread):
             self.log_signal.emit(f"\n[ERROR] 汇总异常: {str(e)}\n")
             self.finished_signal.emit(False, "")
 
+class CRISPRessoRefineWorker(QThread):
+    log_signal = Signal(str)
+    progress_signal = Signal(int, int)
+    finished_signal = Signal(bool, int)
+
+    def __init__(self, output_dir: str, plot_left: int = 0, plot_right: int = 0, parent=None):
+        super().__init__(parent)
+        self.output_dir = output_dir
+        self.plot_left = plot_left
+        self.plot_right = plot_right
+        self._is_stopped = False
+
+    def run(self):
+        try:
+            if not os.path.exists(self.output_dir):
+                self.log_signal.emit(f"[ERROR] 目标输出目录不存在: {self.output_dir}\n")
+                self.finished_signal.emit(False, 0)
+                return
+
+            self.log_signal.emit("=" * 60 + "\n")
+            self.log_signal.emit("  批量更新 CRISPResso2 绘图窗口 (Figure 2b / Figure 9 / HTML)\n")
+            self.log_signal.emit("=" * 60 + "\n")
+            self.log_signal.emit(f"[INFO] 扫描目录: {self.output_dir}\n")
+            self.log_signal.emit(f"[INFO] 绘图窗口设定: [- {self.plot_left}] [+ {self.plot_right}] bp\n")
+
+            run_dirs = []
+            for root, dirs, files in os.walk(self.output_dir):
+                if "CRISPResso2_info.json" in files:
+                    run_dirs.append(root)
+
+            if not run_dirs:
+                self.log_signal.emit("[WARN] 未在指定目录下发现任何包含 CRISPResso2_info.json 的分析结果目录！\n")
+                self.finished_signal.emit(False, 0)
+                return
+
+            total = len(run_dirs)
+            self.log_signal.emit(f"[INFO] 共检测到 {total} 个已完成的样本分析目录，开始极速重绘...\n")
+
+            success_count = 0
+            for idx, r_dir in enumerate(run_dirs, start=1):
+                if self._is_stopped:
+                    break
+                s_name = os.path.basename(os.path.dirname(r_dir)) if os.path.basename(r_dir).startswith("CRISPResso_") else os.path.basename(r_dir)
+                self.log_signal.emit(f"[{idx}/{total}] 正在重绘样本: {s_name}...\n")
+                
+                refine_sample_plots(r_dir, self.plot_left, self.plot_right, log_callback=self._emit_log)
+                success_count += 1
+                self.progress_signal.emit(idx, total)
+
+            self.log_signal.emit(f"\n[OK] 批量重绘完成！共成功更新 {success_count}/{total} 个样本的图表与 HTML 报告。\n")
+            self.finished_signal.emit(True, success_count)
+        except Exception as e:
+            self.log_signal.emit(f"\n[ERROR] 批量重绘异常: {str(e)}\n")
+            self.finished_signal.emit(False, 0)
+
+    def _emit_log(self, text: str):
+        if not self._is_stopped:
+            self.log_signal.emit(text)
+
+    def stop(self):
+        self._is_stopped = True
+        global_runner.kill_current_process()
+        self.terminate()
+
 class CRISPRessoTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.worker = None
+        self.summary_worker = None
+        self.refine_worker = None
         self.setAcceptDrops(True)
         self.init_ui()
 
@@ -510,6 +576,12 @@ class CRISPRessoTab(QWidget):
         self.btn_summary_only.setToolTip("当已有 CRISPResso2 运行结果时，无需重新比对测序文件，直接根据 Excel 信息表和结果目录秒级提取并生成汇总 Excel 表格！")
         self.btn_summary_only.clicked.connect(self.start_summary_only)
         out_layout.addWidget(self.btn_summary_only)
+
+        self.btn_refine_plots = QPushButton("🖼️ 批量更新绘图窗口与HTML", self)
+        self.btn_refine_plots.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #7b1fa2; color: white; padding: 6px 14px;")
+        self.btn_refine_plots.setToolTip("无需重新比对分析测序文件！根据上方设置的【绘图窗口(sg -/+ bp)】，秒级批量更新输出目录中所有已分析样本的 Figure 2b、Figure 9 及 HTML 报告！")
+        self.btn_refine_plots.clicked.connect(self.start_refine_plots)
+        out_layout.addWidget(self.btn_refine_plots)
 
         self.btn_stop = QPushButton("停止", self)
         self.btn_stop.setEnabled(False)
@@ -876,6 +948,69 @@ class CRISPRessoTab(QWidget):
         else:
             QMessageBox.critical(self, "汇总失败", "汇总过程中出现异常，请查看日志！")
 
+    def start_refine_plots(self):
+        out_dir = self.txt_output_dir.text().strip()
+        fq_dir = self.txt_batch_fq.text().strip()
+        
+        target_dir = ""
+        if out_dir and os.path.exists(out_dir):
+            target_dir = out_dir
+        elif fq_dir and os.path.exists(fq_dir):
+            target_dir = fq_dir
+
+        if not target_dir:
+            QMessageBox.warning(
+                self,
+                "参数错误",
+                "请先选择有效的结果输出目录（包含已分析的 CRISPResso 样本文件夹）！"
+            )
+            return
+
+        try:
+            plot_left = int(self.txt_plot_left.text().strip())
+        except ValueError:
+            plot_left = 0
+            self.txt_plot_left.setText("0")
+
+        try:
+            plot_right = int(self.txt_plot_right.text().strip())
+        except ValueError:
+            plot_right = 0
+            self.txt_plot_right.setText("0")
+
+        self.btn_run.setEnabled(False)
+        self.btn_summary_only.setEnabled(False)
+        self.btn_refine_plots.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self.log_text.clear()
+        self.progress_bar.setValue(0)
+
+        self.refine_worker = CRISPRessoRefineWorker(
+            output_dir=target_dir,
+            plot_left=plot_left,
+            plot_right=plot_right
+        )
+        self.refine_worker.log_signal.connect(self.append_log)
+        self.refine_worker.progress_signal.connect(self.update_progress)
+        self.refine_worker.finished_signal.connect(self.on_refine_finished)
+        self.refine_worker.start()
+
+    @Slot(bool, int)
+    def on_refine_finished(self, success: bool, count: int):
+        self.btn_run.setEnabled(True)
+        self.btn_summary_only.setEnabled(True)
+        self.btn_refine_plots.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        if success:
+            self.progress_bar.setValue(100)
+            QMessageBox.information(
+                self,
+                "更新完成",
+                f"🎉 批量更新完成！\n已成功刷新 {count} 个样本的 Figure 2b、Figure 9 及 HTML 报告。"
+            )
+        else:
+            QMessageBox.warning(self, "提示", "未更新任何图表，请检查输出目录下是否存在分析结果！")
+
     def stop_analysis(self):
         if hasattr(self, 'worker') and self.worker:
             self.worker.stop()
@@ -884,8 +1019,12 @@ class CRISPRessoTab(QWidget):
         if hasattr(self, 'summary_worker') and self.summary_worker:
             self.summary_worker.terminate()
             self.append_log("\n[WARN] 用户已强行终止汇总任务！\n")
+        if hasattr(self, 'refine_worker') and self.refine_worker:
+            self.refine_worker.stop()
+            self.append_log("\n[WARN] 用户已强行终止批量重绘任务！\n")
         self.btn_run.setEnabled(True)
         self.btn_summary_only.setEnabled(True)
+        self.btn_refine_plots.setEnabled(True)
         self.btn_stop.setEnabled(False)
 
     @Slot(str)

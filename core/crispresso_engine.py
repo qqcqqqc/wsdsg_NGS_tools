@@ -313,6 +313,120 @@ def get_sub_byproduct_bases(base_from: str, base_to: str) -> Tuple[str, str]:
         else:
             return all_other[0], all_other[1]
 
+def compute_be_overall_editing_metrics(
+    target_dir: str,
+    s_sg: str,
+    s_amp: str,
+    s_base_from: str,
+    s_base_to: str,
+    ref_dict: Optional[Dict[str, Any]] = None
+) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Computes overall editing metrics strictly within the sgRNA window:
+    1. 纯净编辑效率% (With Subs, No Indel / Total):
+       Reads with >=1 target substitution (from_base -> to_base) in sgRNA AND no Indels in sgRNA / Total Aligned Reads
+    2. 未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel):
+       Reads with >=1 target substitution (from_base -> to_base) in sgRNA AND no Indels in sgRNA / Reads with no Indels in sgRNA
+    """
+    if not target_dir or not os.path.exists(target_dir):
+        return None, None
+
+    zip_path = os.path.join(target_dir, "Alleles_frequency_table.zip")
+    txt_path = None
+    if not os.path.exists(zip_path):
+        for f in os.listdir(target_dir):
+            if 'Alleles_frequency_table_around_sgRNA' in f and f.endswith('.txt'):
+                txt_path = os.path.join(target_dir, f)
+                break
+    
+    if not os.path.exists(zip_path) and not txt_path:
+        return None, None
+
+    sg_clean = (s_sg or "").strip().upper()
+    amp_clean = (s_amp or "").strip().upper()
+    if not sg_clean:
+        return None, None
+
+    sg_start = None
+    sg_end = None
+    if ref_dict and 'sgRNA_intervals' in ref_dict and ref_dict['sgRNA_intervals']:
+        try:
+            sg_start = int(ref_dict['sgRNA_intervals'][0][0])
+            sg_end = int(ref_dict['sgRNA_intervals'][0][1])
+        except Exception:
+            pass
+
+    if sg_start is None and amp_clean:
+        if sg_clean not in amp_clean and sg_clean in rc(amp_clean):
+            amp_clean = rc(amp_clean)
+        idx = amp_clean.find(sg_clean)
+        if idx != -1:
+            sg_start = idx
+            sg_end = idx + len(sg_clean) - 1
+
+    tf_clean = (s_base_from or 'A').strip().upper()
+    tt_clean = (s_base_to or 'G').strip().upper()
+    from_bases = IUPAC_DNA_MAP.get(tf_clean, {tf_clean})
+    to_bases = IUPAC_DNA_MAP.get(tt_clean, {tt_clean})
+    target_bases = to_bases - from_bases if (to_bases - from_bases) else to_bases
+
+    try:
+        if os.path.exists(zip_path):
+            zf = zipfile.ZipFile(zip_path)
+            df = pd.read_csv(zf.open('Alleles_frequency_table.txt'), sep='\t')
+        else:
+            df = pd.read_csv(txt_path, sep='\t')
+
+        if df.empty or '#Reads' not in df.columns:
+            return None, None
+
+        total_reads = 0
+        pure_edited_reads = 0
+        non_indel_reads = 0
+        is_full_amp = (os.path.exists(zip_path) and sg_start is not None and sg_end is not None)
+
+        for _, row in df.iterrows():
+            r_seq = str(row['Reference_Sequence'])
+            a_seq = str(row['Aligned_Sequence'])
+            reads = float(row['#Reads']) if pd.notnull(row['#Reads']) else 0.0
+            if reads <= 0:
+                continue
+
+            total_reads += reads
+
+            if is_full_amp:
+                pos = 0; st_idx = -1; en_idx = -1
+                for idx, c in enumerate(r_seq):
+                    if c != '-':
+                        if pos == sg_start: st_idx = idx
+                        if pos == sg_end: en_idx = idx; break
+                        pos += 1
+                if st_idx == -1: st_idx = 0
+                if en_idx == -1: en_idx = len(r_seq) - 1
+                sub_aln = a_seq[st_idx : en_idx + 1]
+                sub_ref = r_seq[st_idx : en_idx + 1]
+            else:
+                sub_aln = a_seq
+                sub_ref = r_seq
+
+            has_indel = ('-' in sub_aln) or ('-' in sub_ref)
+            if not has_indel:
+                non_indel_reads += reads
+                has_target_sub = False
+                for a, r in zip(sub_aln, sub_ref):
+                    if r in from_bases and a in target_bases:
+                        has_target_sub = True
+                        break
+                if has_target_sub:
+                    pure_edited_reads += reads
+
+        pct_pure_total = (pure_edited_reads / total_reads) if total_reads > 0 else 0.0
+        pct_pure_non_indel = (pure_edited_reads / non_indel_reads) if non_indel_reads > 0 else 0.0
+        return pct_pure_total, pct_pure_non_indel
+    except Exception as e:
+        print(f"Error calculating BE overall metrics: {e}")
+        return None, None
+
 def extract_single_be_record(
     s_name: str,
     s_desc: str,
@@ -322,7 +436,9 @@ def extract_single_be_record(
     df_sg: Optional[pd.DataFrame],
     df_sub: Optional[pd.DataFrame],
     offset: Optional[int],
-    sub_col_indices: Optional[Dict[int, int]] = None
+    sub_col_indices: Optional[Dict[int, int]] = None,
+    overall_pure_eff: Optional[float] = None,
+    overall_intact_eff: Optional[float] = None
 ) -> Dict[str, Any]:
     """Extract a single BE efficiency record for a specific target_from -> target_to pair."""
     sg_len = len(s_sg) if s_sg else 20
@@ -331,7 +447,9 @@ def extract_single_be_record(
         '描述': s_desc,
         '原始碱基': target_from,
         '修改后碱基': target_to,
-        '测序深度': 0
+        '测序深度': 0,
+        '纯净编辑效率% (With Subs, No Indel / Total)': overall_pure_eff,
+        '未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)': overall_intact_eff
     }
     for p in range(1, sg_len + 1):
         rec[p] = None
@@ -586,10 +704,15 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                     if pos < len(df_sub.columns):
                         sub_col_indices[pos] = pos
 
+        # Compute overall BE editing efficiency metrics for Main, Sub1, Sub2
+        m_pure, m_intact = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, s_base_to, ref_dict)
+        s1_pure, s1_intact = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, sub1_base, ref_dict)
+        s2_pure, s2_intact = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, sub2_base, ref_dict)
+
         # Extract 3 records: Main (Target), Sub1 (Byproduct 1), Sub2 (Byproduct 2)
-        rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, df_sg, df_sub, offset, sub_col_indices)
-        rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, df_sg, df_sub, offset, sub_col_indices)
-        rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, df_sg, df_sub, offset, sub_col_indices)
+        rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, df_sg, df_sub, offset, sub_col_indices, m_pure, m_intact)
+        rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, df_sg, df_sub, offset, sub_col_indices, s1_pure, s1_intact)
+        rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, df_sg, df_sub, offset, sub_col_indices, s2_pure, s2_intact)
 
         if log_callback:
             log_callback(f"[INFO] 成功提取 BE 样本数据: {s_name}\n")
@@ -604,7 +727,11 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
     outpath = os.path.join(output_dir, outname)
 
     if records_be_main:
-        base_cols = ['样品名', '描述', '原始碱基', '修改后碱基', '测序深度']
+        base_cols = [
+            '样品名', '描述', '原始碱基', '修改后碱基', '测序深度',
+            '纯净编辑效率% (With Subs, No Indel / Total)',
+            '未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)'
+        ]
         
         def format_be_df(records):
             df = pd.DataFrame(records)
@@ -641,11 +768,16 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
         if len(sheet_sub1) > 31: sheet_sub1 = f"BE 副产物_{s1_tag[:10]} (副)"
         if len(sheet_sub2) > 31: sheet_sub2 = f"BE 副产物_{s2_tag[:10]} (副)"
 
+        overall_eff_cols = [
+            '纯净编辑效率% (With Subs, No Indel / Total)',
+            '未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)'
+        ]
+
         def write_all_sheets(writer_obj):
             # Write Sheet 1: Main Target Efficiencies
             df_main.to_excel(writer_obj, index=False, sheet_name=sheet_main)
             ws_m = writer_obj.sheets[sheet_main]
-            pct_m = pos_main + unspec_main
+            pct_m = overall_eff_cols + pos_main + unspec_main
             col_m_idx = [df_main.columns.get_loc(c) + 1 for c in pct_m if c in df_main.columns]
             for row in range(2, len(df_main) + 2):
                 for col_idx in col_m_idx:
@@ -656,7 +788,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             # Write Sheet 2: Sub1 Byproduct Efficiencies
             df_sub1.to_excel(writer_obj, index=False, sheet_name=sheet_sub1)
             ws_s1 = writer_obj.sheets[sheet_sub1]
-            pct_s1 = pos_sub1 + unspec_sub1
+            pct_s1 = overall_eff_cols + pos_sub1 + unspec_sub1
             col_s1_idx = [df_sub1.columns.get_loc(c) + 1 for c in pct_s1 if c in df_sub1.columns]
             for row in range(2, len(df_sub1) + 2):
                 for col_idx in col_s1_idx:
@@ -667,7 +799,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             # Write Sheet 3: Sub2 Byproduct Efficiencies
             df_sub2.to_excel(writer_obj, index=False, sheet_name=sheet_sub2)
             ws_s2 = writer_obj.sheets[sheet_sub2]
-            pct_s2 = pos_sub2 + unspec_sub2
+            pct_s2 = overall_eff_cols + pos_sub2 + unspec_sub2
             col_s2_idx = [df_sub2.columns.get_loc(c) + 1 for c in pct_s2 if c in df_sub2.columns]
             for row in range(2, len(df_sub2) + 2):
                 for col_idx in col_s2_idx:
