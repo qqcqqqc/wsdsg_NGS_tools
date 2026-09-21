@@ -321,7 +321,8 @@ def extract_single_be_record(
     target_to: str,
     df_sg: Optional[pd.DataFrame],
     df_sub: Optional[pd.DataFrame],
-    offset: Optional[int]
+    offset: Optional[int],
+    sub_col_indices: Optional[Dict[int, int]] = None
 ) -> Dict[str, Any]:
     """Extract a single BE efficiency record for a specific target_from -> target_to pair."""
     sg_len = len(s_sg) if s_sg else 20
@@ -358,11 +359,16 @@ def extract_single_be_record(
                         eff_ratio = target_reads / float(all_reads)
                         rec[sg_pos] = eff_ratio
 
-    if df_sub is not None and offset is not None:
+    if df_sub is not None:
         total_depth = rec['测序深度']
         for pos in range(1, sg_len + 1):
-            col_idx = pos - offset
-            if 0 <= col_idx < len(df_sub.columns) and total_depth > 0:
+            if sub_col_indices is not None and pos in sub_col_indices:
+                col_idx = sub_col_indices[pos]
+            elif offset is not None:
+                col_idx = pos - offset
+            else:
+                col_idx = pos
+            if col_idx is not None and 0 <= col_idx < len(df_sub.columns) and total_depth > 0:
                 col_series = pd.to_numeric(df_sub.iloc[:, col_idx], errors='coerce').fillna(0)
                 unspec_cnt = sum(float(col_series.iloc[BASE_ROW_MAP[b]]) for b in unspec_bases if b in BASE_ROW_MAP)
                 if unspec_cnt < 0:
@@ -511,7 +517,12 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 plot_idxs = ref_dict.get('sgRNA_plot_idxs', [])
                 sg_intervals = ref_dict.get('sgRNA_intervals', [])
                 if plot_idxs:
-                    plot_start = int(plot_idxs[0][0])
+                    if isinstance(plot_idxs[0], dict):
+                        plot_start = 0
+                    elif isinstance(plot_idxs[0], (list, tuple)) and len(plot_idxs[0]) > 0:
+                        plot_start = int(plot_idxs[0][0])
+                    else:
+                        plot_start = 0
                     if sg_intervals:
                         sg_start_info = int(sg_intervals[0][0])
                         offset = int(plot_start - sg_start_info)
@@ -548,10 +559,37 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             except Exception:
                 pass
 
+        # Map each sgRNA position (1..sg_len) to the corresponding column index in df_sub (Quantification_window_substitution_frequency_table)
+        sub_col_indices = {}
+        if df_sub is not None:
+            inc_raw = ref_dict.get('include_idxs', []) if ref_dict else []
+            if isinstance(inc_raw, dict):
+                inc_list = inc_raw.get('value', [])
+            elif isinstance(inc_raw, (list, tuple)):
+                inc_list = list(inc_raw)
+            else:
+                inc_list = []
+
+            sg_start_pos = sg_start_exact
+            if sg_start_pos is None and sg_intervals:
+                try:
+                    sg_start_pos = int(sg_intervals[0][0])
+                except Exception:
+                    pass
+
+            for pos in range(1, sg_len + 1):
+                if inc_list and sg_start_pos is not None:
+                    target_amp_pos = sg_start_pos + pos - 1
+                    if target_amp_pos in inc_list:
+                        sub_col_indices[pos] = 1 + inc_list.index(target_amp_pos)
+                else:
+                    if pos < len(df_sub.columns):
+                        sub_col_indices[pos] = pos
+
         # Extract 3 records: Main (Target), Sub1 (Byproduct 1), Sub2 (Byproduct 2)
-        rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, df_sg, df_sub, offset)
-        rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, df_sg, df_sub, offset)
-        rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, df_sg, df_sub, offset)
+        rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, df_sg, df_sub, offset, sub_col_indices)
+        rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, df_sg, df_sub, offset, sub_col_indices)
+        rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, df_sg, df_sub, offset, sub_col_indices)
 
         if log_callback:
             log_callback(f"[INFO] 成功提取 BE 样本数据: {s_name}\n")
@@ -662,6 +700,96 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
         df_empty.to_excel(outpath, index=False)
         return outpath
 
+def get_crispresso_window_args(
+    mode: str,
+    s_sg: str,
+    s_amp: str,
+    plot_window: int = 20,
+    quant_window: int = 10,
+    cleavage_offset: int = -3
+) -> List[str]:
+    """
+    Generate CRISPResso2 window parameters (--plot_window_size, --cleavage_offset, -qwc, --quantification_window_size)
+    so that:
+    1. If plot_window > 0:
+       - The plotted window (Figure 2b / Figure 9) starts exactly at the 1st base of the sgRNA.
+       - The plotted window spans exactly plot_window bp.
+    2. If plot_window <= 0:
+       - Plots the full amplicon sequence (--plot_window_size 0).
+    3. The quantification window remains independent and unaffected:
+       - BE mode: Locked strictly to the sgRNA sequence coordinates via -qwc.
+       - NHEJ / HDR / PE mode: Locked to cleavage position (sg_end + cleavage_offset) +/- quant_window via -qwc.
+    """
+    is_be_mode = ("BE" in mode or mode == "Base Editing (BE)")
+    s_sg_clean = (s_sg or "").strip().upper()
+    s_amp_clean = (s_amp or "").strip().upper()
+
+    idx_found = -1
+    if s_sg_clean and s_amp_clean:
+        idx_found = s_amp_clean.find(s_sg_clean)
+        if idx_found == -1:
+            idx_found = s_amp_clean.find(rc(s_sg_clean))
+
+    be_sg_len = len(s_sg_clean) if s_sg_clean else 20
+
+    if idx_found == -1:
+        if is_be_mode:
+            return [
+                "--quantification_window_size", str(be_sg_len),
+                "--cleavage_offset", "0",
+                "--plot_window_size", str(be_sg_len if plot_window > 0 else 0)
+            ]
+        else:
+            return [
+                "--quantification_window_size", str(quant_window),
+                "--cleavage_offset", str(cleavage_offset),
+                "--plot_window_size", str(plot_window if plot_window > 0 else 0)
+            ]
+
+    S = idx_found
+    L = be_sg_len
+
+    args: List[str] = []
+    if plot_window <= 0:
+        args.extend(["--plot_window_size", "0"])
+        if is_be_mode:
+            args.extend([
+                "-qwc", f"{S}-{S + L - 1}",
+                "--quantification_window_size", str(L),
+                "--cleavage_offset", "0"
+            ])
+        else:
+            cut_pos = S + L - 1 + cleavage_offset
+            qw_st = max(0, cut_pos - quant_window + 1)
+            qw_en = min(len(s_amp_clean) - 1, cut_pos + quant_window)
+            args.extend([
+                "-qwc", f"{qw_st}-{qw_en}",
+                "--quantification_window_size", str(quant_window),
+                "--cleavage_offset", str(cleavage_offset)
+            ])
+    else:
+        half_w = (plot_window + 1) // 2
+        center_offset = half_w - L
+        args.extend([
+            "--plot_window_size", str(half_w),
+            "--cleavage_offset", str(center_offset)
+        ])
+        if is_be_mode:
+            args.extend([
+                "-qwc", f"{S}-{S + L - 1}",
+                "--quantification_window_size", str(L)
+            ])
+        else:
+            cut_pos = S + L - 1 + cleavage_offset
+            qw_st = max(0, cut_pos - quant_window + 1)
+            qw_en = min(len(s_amp_clean) - 1, cut_pos + quant_window)
+            args.extend([
+                "-qwc", f"{qw_st}-{qw_en}",
+                "--quantification_window_size", str(quant_window)
+            ])
+
+    return args
+
 def run_crispresso_batch_pipeline(
     excel_path: str,
     fastq_dir: str,
@@ -722,17 +850,6 @@ def run_crispresso_batch_pipeline(
 
         is_be_mode = ("BE" in mode or mode == "Base Editing (BE)")
 
-        be_center_idx = None
-        be_sg_len = len(s_sg) if s_sg else 20
-        if is_be_mode and s_sg and s_amp:
-            s_sg_clean = s_sg.strip().upper()
-            s_amp_clean = s_amp.strip().upper()
-            idx_found = s_amp_clean.find(s_sg_clean)
-            if idx_found == -1:
-                idx_found = s_amp_clean.find(rc(s_sg_clean))
-            if idx_found != -1:
-                be_center_idx = idx_found + be_sg_len // 2 - 1
-
         if log_callback:
             log_callback(f"\n[{s_idx}/{total_samples}] 正在处理样本: {s_name} ({s_desc})\n")
 
@@ -762,19 +879,15 @@ def run_crispresso_batch_pipeline(
             "--n_processes", str(threads)
         ])
 
-        if is_be_mode and be_center_idx is not None:
-            cmd.extend([
-                "--quantification_window_center", str(be_center_idx),
-                "--cleavage_offset", "0",
-                "--plot_window_size", str(be_sg_len),
-                "--quantification_window_size", str(be_sg_len)
-            ])
-        else:
-            cmd.extend([
-                "--quantification_window_size", str(quant_window),
-                "--cleavage_offset", str(cleavage_offset),
-                "--plot_window_size", str(plot_window)
-            ])
+        window_args = get_crispresso_window_args(
+            mode=mode,
+            s_sg=s_sg,
+            s_amp=s_amp,
+            plot_window=plot_window,
+            quant_window=quant_window,
+            cleavage_offset=cleavage_offset
+        )
+        cmd.extend(window_args)
 
         if is_be_mode:
             cmd.append("--base_editor_output")

@@ -12,7 +12,9 @@ from core.platform_runner import global_runner, win_to_wsl_path, is_windows
 from core.crispresso_engine import (
     parse_crispresso_sample_sheet,
     run_crispresso_batch_pipeline,
-    run_summary_only_pipeline
+    run_summary_only_pipeline,
+    get_crispresso_window_args,
+    rc
 )
 
 class DropLineEdit(QLineEdit):
@@ -194,19 +196,13 @@ class CRISPRessoSingleWorker(QThread):
             if self.r2_path:
                 cmd.extend(["--fastq_r2", win_to_wsl_path(self.r2_path) if is_windows() else self.r2_path])
                 
-            is_be_mode = ("BE" in self.mode or self.mode == "Base Editing (BE)")
-
-            be_center_idx = None
-            be_sg_len = len(self.guide) if self.guide else 20
-            if is_be_mode and self.guide and self.amplicon:
+            # Auto reverse-complement amplicon if sgRNA is on the non-editing strand (rc(amplicon))
+            if self.guide and self.amplicon:
                 sg_clean = self.guide.strip().upper()
                 amp_clean = self.amplicon.strip().upper()
-                idx_found = amp_clean.find(sg_clean)
-                if idx_found == -1:
-                    from core.crispresso_engine import rc
-                    idx_found = amp_clean.find(rc(sg_clean))
-                if idx_found != -1:
-                    be_center_idx = idx_found + be_sg_len // 2 - 1
+                if sg_clean not in amp_clean and sg_clean in rc(amp_clean):
+                    self.amplicon = rc(amp_clean)
+                    self._emit_log("[INFO] sgRNA 位于 Amplicon 反向互补链上，已自动修正链方向 (Reverse Complement)！\n")
 
             cmd.extend([
                 "--amplicon_seq", self.amplicon,
@@ -217,19 +213,15 @@ class CRISPRessoSingleWorker(QThread):
                 "--exclude_bp_from_right", str(self.exclude_right)
             ])
 
-            if is_be_mode and be_center_idx is not None:
-                cmd.extend([
-                    "--quantification_window_center", str(be_center_idx),
-                    "--cleavage_offset", "0",
-                    "--plot_window_size", str(be_sg_len),
-                    "--quantification_window_size", str(be_sg_len)
-                ])
-            else:
-                cmd.extend([
-                    "--quantification_window_size", str(self.quant_window),
-                    "--cleavage_offset", str(self.cleavage_offset),
-                    "--plot_window_size", str(self.plot_window)
-                ])
+            window_args = get_crispresso_window_args(
+                mode=self.mode,
+                s_sg=self.guide,
+                s_amp=self.amplicon,
+                plot_window=self.plot_window,
+                quant_window=self.quant_window,
+                cleavage_offset=self.cleavage_offset
+            )
+            cmd.extend(window_args)
 
             if is_be_mode:
                 cmd.append("--base_editor_output")
@@ -389,7 +381,7 @@ class CRISPRessoTab(QWidget):
         adv_layout.addWidget(QLabel("绘图显示窗口(bp):"))
         self.txt_plot_win = QLineEdit("20", self)
         self.txt_plot_win.setMaximumWidth(40)
-        self.txt_plot_win.setToolTip("绘图显示窗口：NHEJ/HDR 模式按此设定值绘图（默认 20bp），BE 模式自动限制为只绘制 sgRNA 序列。")
+        self.txt_plot_win.setToolTip("绘图显示窗口 (bp)：控制报告中 Figure 2b 与 Figure 9 图表显示序列长度。\n从 sgRNA 第 1 位开始向右显示设定的 bp 数（如填 20 则仅显示 20bp 的 sgRNA；填 0 或负数则显示 Amplicon 全长）。")
         adv_layout.addWidget(self.txt_plot_win)
 
         btn_help_params = QPushButton("💡 参数说明", self)
@@ -540,7 +532,11 @@ class CRISPRessoTab(QWidget):
             "3. 最小质量分 (Min Read Quality, 默认 30):\n"
             "   低于此 Phred 质量分 (Q30) 的 Reads 将被自动过滤，表示 99.9% 准确率。\n\n"
             "4. 左/右引物屏蔽 (Exclude Left/Right, 默认 15):\n"
-            "   屏蔽 Amplicon 两端 PCR 引物结合区的碱基，防止引物合成低质量错配影响编辑统计。"
+            "   屏蔽 Amplicon 两端 PCR 引物结合区的碱基，防止引物合成低质量错配影响编辑统计。\n\n"
+            "5. 绘图显示窗口 (Plot Window, 默认 20bp):\n"
+            "   控制报告中 Figure 2b（碱基分布图）与 Figure 9（等位基因频率表）的图表显示长度。\n"
+            "   • 设定值 > 0：从 sgRNA 的第 1 位碱基开始向右展示指定数量的 bp（例如填 20 即只精确显示 20bp 的 sgRNA 序列，不含多余侧翼；填 30 则显示 30bp）。\n"
+            "   • 设定值 <= 0：显示完整的扩增子（Amplicon）全长序列。"
         )
         QMessageBox.information(self, "参数详细说明", msg)
 
