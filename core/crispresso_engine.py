@@ -704,19 +704,23 @@ def get_crispresso_window_args(
     mode: str,
     s_sg: str,
     s_amp: str,
-    plot_window: int = 20,
+    plot_left: int = 0,
+    plot_right: int = 0,
     quant_window: int = 10,
     cleavage_offset: int = -3
 ) -> List[str]:
     """
     Generate CRISPResso2 window parameters (--plot_window_size, --cleavage_offset, -qwc, --quantification_window_size)
     so that:
-    1. If plot_window > 0:
-       - The plotted window (Figure 2b / Figure 9) starts exactly at the 1st base of the sgRNA.
-       - The plotted window spans exactly plot_window bp.
-    2. If plot_window <= 0:
+    1. Default (plot_left=0, plot_right=0):
+       - Automatically adapts to the exact sgRNA length (len(s_sg)) for each sample.
+       - Figure 2b and Figure 9 plot exactly the sgRNA sequence with 0 extra flanking bp.
+    2. Extended (plot_left > 0 or plot_right > 0):
+       - Extends plot_left bp upstream of sgRNA 5' start.
+       - Extends plot_right bp downstream of sgRNA 3' end.
+    3. Full amplicon (plot_left < 0 or plot_right < 0):
        - Plots the full amplicon sequence (--plot_window_size 0).
-    3. The quantification window remains independent and unaffected:
+    4. The quantification window remains independent and unaffected:
        - BE mode: Locked strictly to the sgRNA sequence coordinates via -qwc.
        - NHEJ / HDR / PE mode: Locked to cleavage position (sg_end + cleavage_offset) +/- quant_window via -qwc.
     """
@@ -737,20 +741,21 @@ def get_crispresso_window_args(
             return [
                 "--quantification_window_size", str(be_sg_len),
                 "--cleavage_offset", "0",
-                "--plot_window_size", str(be_sg_len if plot_window > 0 else 0)
+                "--plot_window_size", str(0 if (plot_left < 0 or plot_right < 0) else be_sg_len)
             ]
         else:
             return [
                 "--quantification_window_size", str(quant_window),
                 "--cleavage_offset", str(cleavage_offset),
-                "--plot_window_size", str(plot_window if plot_window > 0 else 0)
+                "--plot_window_size", str(0 if (plot_left < 0 or plot_right < 0) else be_sg_len)
             ]
 
     S = idx_found
     L = be_sg_len
 
     args: List[str] = []
-    if plot_window <= 0:
+    if plot_left < 0 or plot_right < 0:
+        # Full amplicon mode
         args.extend(["--plot_window_size", "0"])
         if is_be_mode:
             args.extend([
@@ -768,8 +773,9 @@ def get_crispresso_window_args(
                 "--cleavage_offset", str(cleavage_offset)
             ])
     else:
-        half_w = (plot_window + 1) // 2
-        center_offset = half_w - L
+        span = L + max(0, plot_left) + max(0, plot_right)
+        half_w = (span + 1) // 2
+        center_offset = half_w - max(0, plot_left) - L
         args.extend([
             "--plot_window_size", str(half_w),
             "--cleavage_offset", str(center_offset)
@@ -800,7 +806,9 @@ def run_crispresso_batch_pipeline(
     min_read_qual: int = 30,
     exclude_left: int = 15,
     exclude_right: int = 15,
-    plot_window: int = 20,
+    plot_left: int = 0,
+    plot_right: int = 0,
+    plot_window: Optional[int] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None
 ) -> Tuple[List[str], str]:
@@ -816,6 +824,12 @@ def run_crispresso_batch_pipeline(
     excel_path = os.path.abspath(excel_path)
     fastq_dir = os.path.abspath(fastq_dir)
     output_dir = os.path.abspath(output_dir)
+
+    # Backward compatibility: if plot_window is specified and positive, convert to plot_right
+    if plot_window is not None:
+        if plot_window <= 0:
+            plot_left = -1
+            plot_right = -1
 
     samples = parse_crispresso_sample_sheet(excel_path)
     total_samples = len(samples)
@@ -879,11 +893,20 @@ def run_crispresso_batch_pipeline(
             "--n_processes", str(threads)
         ])
 
+        # If legacy plot_window was passed as positive int, compute plot_right for this specific sgRNA length
+        cur_plot_left = plot_left
+        cur_plot_right = plot_right
+        if plot_window is not None and plot_window > 0:
+            sg_cur_len = len(s_sg) if s_sg else 20
+            cur_plot_left = 0
+            cur_plot_right = max(0, plot_window - sg_cur_len)
+
         window_args = get_crispresso_window_args(
             mode=mode,
             s_sg=s_sg,
             s_amp=s_amp,
-            plot_window=plot_window,
+            plot_left=cur_plot_left,
+            plot_right=cur_plot_right,
             quant_window=quant_window,
             cleavage_offset=cleavage_offset
         )

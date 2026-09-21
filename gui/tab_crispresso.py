@@ -98,7 +98,8 @@ class CRISPRessoBatchWorker(QThread):
         min_read_qual: int = 30,
         exclude_left: int = 15,
         exclude_right: int = 15,
-        plot_window: int = 20,
+        plot_left: int = 0,
+        plot_right: int = 0,
         parent=None
     ):
         super().__init__(parent)
@@ -111,7 +112,8 @@ class CRISPRessoBatchWorker(QThread):
         self.min_read_qual = min_read_qual
         self.exclude_left = exclude_left
         self.exclude_right = exclude_right
-        self.plot_window = plot_window
+        self.plot_left = plot_left
+        self.plot_right = plot_right
         self._is_stopped = False
 
     def run(self):
@@ -126,7 +128,8 @@ class CRISPRessoBatchWorker(QThread):
                 min_read_qual=self.min_read_qual,
                 exclude_left=self.exclude_left,
                 exclude_right=self.exclude_right,
-                plot_window=self.plot_window,
+                plot_left=self.plot_left,
+                plot_right=self.plot_right,
                 log_callback=self._emit_log,
                 progress_callback=self._emit_progress
             )
@@ -169,7 +172,8 @@ class CRISPRessoSingleWorker(QThread):
         min_read_qual: int = 30,
         exclude_left: int = 15,
         exclude_right: int = 15,
-        plot_window: int = 20,
+        plot_left: int = 0,
+        plot_right: int = 0,
         parent=None
     ):
         super().__init__(parent)
@@ -185,7 +189,8 @@ class CRISPRessoSingleWorker(QThread):
         self.min_read_qual = min_read_qual
         self.exclude_left = exclude_left
         self.exclude_right = exclude_right
-        self.plot_window = plot_window
+        self.plot_left = plot_left
+        self.plot_right = plot_right
         self._is_stopped = False
 
     def run(self):
@@ -217,7 +222,8 @@ class CRISPRessoSingleWorker(QThread):
                 mode=self.mode,
                 s_sg=self.guide,
                 s_amp=self.amplicon,
-                plot_window=self.plot_window,
+                plot_left=self.plot_left,
+                plot_right=self.plot_right,
                 quant_window=self.quant_window,
                 cleavage_offset=self.cleavage_offset
             )
@@ -378,11 +384,18 @@ class CRISPRessoTab(QWidget):
         self.txt_ex_right.setMaximumWidth(40)
         adv_layout.addWidget(self.txt_ex_right)
 
-        adv_layout.addWidget(QLabel("绘图显示窗口(bp):"))
-        self.txt_plot_win = QLineEdit("20", self)
-        self.txt_plot_win.setMaximumWidth(40)
-        self.txt_plot_win.setToolTip("绘图显示窗口 (bp)：控制报告中 Figure 2b 与 Figure 9 图表显示序列长度。\n从 sgRNA 第 1 位开始向右显示设定的 bp 数（如填 20 则仅显示 20bp 的 sgRNA；填 0 或负数则显示 Amplicon 全长）。")
-        adv_layout.addWidget(self.txt_plot_win)
+        adv_layout.addWidget(QLabel("绘图窗口(sg -/+ bp):"))
+        adv_layout.addWidget(QLabel("-"))
+        self.txt_plot_left = QLineEdit("0", self)
+        self.txt_plot_left.setMaximumWidth(32)
+        self.txt_plot_left.setToolTip("sg 5'上游(左侧)扩展显示的 bp 数。\n默认 0：自适应 sgRNA 实际长度，严格从 sg 第 1 位开始；填 5 则向左多显示 5bp。\n若想显示 Amplicon 全长，两项均填 -1 即可。")
+        adv_layout.addWidget(self.txt_plot_left)
+
+        adv_layout.addWidget(QLabel("+"))
+        self.txt_plot_right = QLineEdit("0", self)
+        self.txt_plot_right.setMaximumWidth(32)
+        self.txt_plot_right.setToolTip("sg 3'下游(右侧)扩展显示的 bp 数。\n默认 0：自适应 sgRNA 实际长度，严格在 sg 末尾截止；填 10 则向右多显示 10bp。\n若想显示 Amplicon 全长，两项均填 -1 即可。")
+        adv_layout.addWidget(self.txt_plot_right)
 
         btn_help_params = QPushButton("💡 参数说明", self)
         btn_help_params.setStyleSheet("background-color: #0288d1; color: white; padding: 2px 8px;")
@@ -533,10 +546,11 @@ class CRISPRessoTab(QWidget):
             "   低于此 Phred 质量分 (Q30) 的 Reads 将被自动过滤，表示 99.9% 准确率。\n\n"
             "4. 左/右引物屏蔽 (Exclude Left/Right, 默认 15):\n"
             "   屏蔽 Amplicon 两端 PCR 引物结合区的碱基，防止引物合成低质量错配影响编辑统计。\n\n"
-            "5. 绘图显示窗口 (Plot Window, 默认 20bp):\n"
-            "   控制报告中 Figure 2b（碱基分布图）与 Figure 9（等位基因频率表）的图表显示长度。\n"
-            "   • 设定值 > 0：从 sgRNA 的第 1 位碱基开始向右展示指定数量的 bp（例如填 20 即只精确显示 20bp 的 sgRNA 序列，不含多余侧翼；填 30 则显示 30bp）。\n"
-            "   • 设定值 <= 0：显示完整的扩增子（Amplicon）全长序列。"
+            "5. 绘图显示窗口 (sg -/+ bp, 默认 - 0 / + 0):\n"
+            "   控制报告中 Figure 2b（碱基分布图）与 Figure 9（等位基因频率表）的图表显示范围。\n"
+            "   • 默认两个值均为 0：自适应表格中每个样本各自的 sgRNA 实际长度（无论样本 sg 是 20bp 还是其他长度，均精准不多不少刚好只画 sgRNA 本身）。\n"
+            "   • 扩展展示（如 - 5 / + 10）：以 sgRNA 为基准，向 5' 上游扩展 5bp，向 3' 下游扩展 10bp 绘图。\n"
+            "   • 显示全长：两项均填 -1 时，将显示完整扩增子（Amplicon）全长序列。"
         )
         QMessageBox.information(self, "参数详细说明", msg)
 
@@ -679,14 +693,16 @@ class CRISPRessoTab(QWidget):
             min_read_qual = int(self.txt_min_qual.text().strip())
             exclude_left = int(self.txt_ex_left.text().strip())
             exclude_right = int(self.txt_ex_right.text().strip())
-            plot_window = int(self.txt_plot_win.text().strip())
+            plot_left = int(self.txt_plot_left.text().strip())
+            plot_right = int(self.txt_plot_right.text().strip())
         except ValueError:
             quant_window = 10
             cleavage_offset = -3
             min_read_qual = 30
             exclude_left = 15
             exclude_right = 15
-            plot_window = 20
+            plot_left = 0
+            plot_right = 0
 
         output_dir = self.txt_output_dir.text().strip()
         mode = self.combo_edit_type.currentText()
@@ -727,7 +743,8 @@ class CRISPRessoTab(QWidget):
                 min_read_qual=min_read_qual,
                 exclude_left=exclude_left,
                 exclude_right=exclude_right,
-                plot_window=plot_window
+                plot_left=plot_left,
+                plot_right=plot_right
             )
             self.worker.log_signal.connect(self.append_log)
             self.worker.progress_signal.connect(self.update_progress)
@@ -768,7 +785,8 @@ class CRISPRessoTab(QWidget):
                 min_read_qual=min_read_qual,
                 exclude_left=exclude_left,
                 exclude_right=exclude_right,
-                plot_window=plot_window
+                plot_left=plot_left,
+                plot_right=plot_right
             )
             self.worker.log_signal.connect(self.append_log)
             self.worker.finished_signal.connect(self.on_single_finished)
