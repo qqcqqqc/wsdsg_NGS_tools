@@ -70,54 +70,21 @@
 
 ---
 
-### 📈 结果汇总指标快速解读指南
+### 📈 结果汇总指标快速解读
 
-分析完成后输出的汇总 Excel 表格中，各项生物学指标定义如下：
+> 💡 **小贴士**：分析完成后生成的 **NHEJ / BE 汇总 Excel 表格各个 Sheet 底部均已直接内置完整的指标定义、计算公式与生物学应用场景**，随时打开 Excel 即可一览无余！
 
-#### 1. 敲除与移码分析指标 (NHEJ 汇总表 / BE Sheet 4)
+#### 1. 敲除与移码分析核心指标 (NHEJ 汇总表 / BE Sheet 4)
+* **`Indels_non3n`（非 3n 移码突变率%）**：评估**基因敲除（KO）破坏有效性**的最核心金指标，统计造成翻译阅读框彻底错乱（Frameshift）的突变读段占比。
+* **`TotalIndels`（总 Indel 突变率%）**：全部发生插入或缺失的读段（包含 3n 整码与非 3n 移码）在总 Reads 中的百分比。
+* **`Indels_without_subs`（排除点突变背景的 Indel 率%）**：分母剔除纯单碱基替换噪音，更纯净反映 Cas 切割修复造成的 Indel 占比。
+* **`3n / 3n+1 / 3n+2`**：细分插入缺失碱基数是否为 3 的倍数（整码 In-frame vs 移码 Frameshift）。
 
-**`TotalIndels`（总 Indel 突变率）**  
-反映全部测序读段中发生插入或缺失的整体百分比。
-
-$$
-\text{TotalIndels} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}
-$$
-
-**`Indels_non3n`（非 3n 移码 Indel 突变率）**  
-插入缺失碱基数非 3 的倍数会导致翻译阅读框移码（Frameshift），造成蛋白失活。评估**基因敲除（KO）破坏有效性**时看此指标。
-
-$$
-\text{Indels}_{\text{non-3n}} = \frac{\text{非 3 的倍数 Indels (即 } 3n+1 \text{ 与 } 3n+2)}{\text{总 Reads (WT + 全部 Indels + Substitutions)}}
-$$
-
-**`Indels_without_subs`（排除点突变背景的 Indel 率）**  
-分子依然是所有 Indels，所谓 `without_subs` 是指**分母去除了纯单碱基替换（Substitutions）**。由于测序和 PCR 会自带微量（0.1%~1%）点突变噪音，剔除该噪音可更真实反映纯净扩增子中的 Indel 占比。
-
-$$
-\text{Indels}_{\text{without-subs}} = \frac{\text{全部 Indels (包含 } 3n, 3n+1, 3n+2)}{\text{WT} + \text{全部 Indels}}
-$$
-  
-#### 2. 碱基编辑分析指标 (BE 汇总表)
-* **`纯净编辑率%`（绝对纯净编辑效率）**：
-  评估细胞或组织群体中获得**无副产物纯净目标编辑产物**的绝对百分比。要求在 sgRNA 靶区范围内**至少发生 1 个目标碱基替换**（如 ABE 的 $A \to G$，CBE 的 $C \to T$），且**在 sg 范围内完全没有发生任何 Indel 插入或缺失**。
-
-  $$
-  \text{纯净编辑率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{所有有效比对 Reads (Total Aligned Reads)}}
-  $$
-
-* **`无Indel编辑率%`（未破坏序列中的编辑转化率）**：
-  剥离 Cas 蛋白双链切割产生的 Indel 副产物背景，专门评估脱氨酶本身的有效催化转化活性。分母剔除所有在 sg 范围内发生 Indel 的 Reads。
-
-  $$
-  \text{无Indel编辑率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{sg 范围内未发生任何 Indel 的 Reads (Non-Indel Reads)}}
-  $$
-
-* **列 `1, 2, 3 ... 20`（单碱基位点目标编辑效率）**：
-  记录 sgRNA 第 1 到第 20 位（或更长）上每个具体位点的**目标产物**突变效率（例如 ABE 中 $A \to G$、CBE 中 $C \to T$）。
-* **列 `u1, u2, u3 ... u20`（非预期杂突变率 / Bystander Unwanted Mutation）**：
-  `u` 代表 **Unspecified**，记录对应位点上突变成**除原始碱基和目标产物之外的其他杂碱基**的比例。
-  * **在 ABE ($A \to G$) 中**：原始是 $A$，目标是 $G$，`u` 列即为突变为 **$C$ 或 $T$** 的杂产物比例。
-  * **在 CBE ($C \to T$) 中**：原始是 $C$，目标是 $T$，`u` 列即为突变为 **$A$ 或 $G$** 的杂产物比例。
+#### 2. 碱基编辑核心指标 (BE 汇总表)
+* **`纯净编辑率%`**：sgRNA 靶区内发生 $\ge 1$ 个目标碱基替换且**完全无任何 Indel** 的读段占总 Reads 的绝对比例。
+* **`无Indel编辑率%`**：在**未发生 Indel 破坏的读段中**发生目标替换的转化比例，专门评估脱氨酶本身的实际催化活性。
+* **`1 ~ 20` 与 `u1 ~ u20`**：分别对应 sg 靶位点上各具体位点的**目标产物突变率**与**非预期杂突变率 (Bystander)**。
+* **`靶区读段分类统计 (Sheet 5)`**：提供未编辑读段、无 Indel 突变读段与含 Indel 读段的严格守恒分类统计（三者相加 = 100%）。
 
 ---
 

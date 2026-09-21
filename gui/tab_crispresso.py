@@ -609,13 +609,14 @@ class CRISPRessoTab(QWidget):
     def show_parameter_help(self):
         msg = (
             "📖 CRISPResso2 参数详细说明：\n\n"
-            "1. 上下游扩展侧翼 (Flanking Window, 默认 10bp):\n"
-            "   系统会自动读取每个样本的真实 sgRNA 长度，并以 sgRNA 为中心向 5' 上游和 3' 下游各延伸 10bp 作为统一定量与绘图边界。\n\n"
+            "1. 定量窗口 (Quantification Window, 默认 10bp):\n"
+            "   用于设定 Cas 酶切割诱导突变/切口分析的监控宽度。\n"
+            "   • 在 NHEJ / HDR / PE 模式下生效：以预测切割位点为中心向两侧各延伸指定 bp（默认 10bp）进行 Indel 与编辑定量。\n"
+            "   • 在 BE 模式下自动锁定禁用：BE 分析已由系统底层自动精准锁定在完整 sgRNA 靶区坐标（1~20 位）内，无需也无法手动修改。\n\n"
             "2. 切割偏移 (Cleavage Offset, 默认 -3):\n"
-            "   预计基因切割位点距离 sgRNA 末尾的偏移量。此参数需根据所使用的核酸酶类型决定：\n"
-            "   • SpCas9 / ABE / CBE：默认 -3（即 PAM 上游 3 个碱基处切割）。\n"
-            "   • 其他核酸酶（如 Cas12a/Cpf1 等）：需根据其特有的切割位点调整。\n"
-            "   注意：修改切割偏移会直接改变切割中心判定，进而影响 NHEJ 的 wt_allele 及 3n 框移/Indel Reads 的统计结果！\n\n"
+            "   预计核酸酶双链断裂 (DSB) 或切口位点距离 sgRNA 3' 末端的偏移量。\n"
+            "   • 在 NHEJ / HDR / PE 模式下生效：SpCas9 默认 -3（即 PAM 上游 3 个碱基处切割）。若使用 Cas12a/Cpf1 等远端切割酶需相应修改。注意修改切割偏移会直接改变切割中心判定，进而影响 NHEJ 的 wt_allele 及 3n 框移/Indel Reads 的统计结果！\n"
+            "   • 在 BE 模式下自动锁定禁用：脱氨编辑以 sgRNA 靶区全长为准，无需设置切割偏移。\n\n"
             "3. 最小质量分 (Min Read Quality, 默认 30):\n"
             "   低于此 Phred 质量分 (Q30) 的 Reads 将被自动过滤，表示 99.9% 准确率。\n\n"
             "4. 左/右引物屏蔽 (Exclude Left/Right, 默认 15):\n"
@@ -637,6 +638,18 @@ class CRISPRessoTab(QWidget):
         is_hdr = ("HDR" in mode_text or "PE" in mode_text)
         self.lbl_hdr.setVisible(is_hdr)
         self.txt_hdr.setVisible(is_hdr)
+
+        is_be = ("BE" in mode_text or mode_text == "Base Editing (BE)")
+        if is_be:
+            self.txt_window.setEnabled(False)
+            self.txt_offset.setEnabled(False)
+            self.txt_window.setToolTip("BE 模式下量化窗口已由系统自动锁定为完整 sgRNA 靶区 (1~20 位)，无需且无法手动配置。")
+            self.txt_offset.setToolTip("BE 模式下量化范围以 sgRNA 靶区绝对坐标为准，无需设置切割偏移。")
+        else:
+            self.txt_window.setEnabled(True)
+            self.txt_offset.setEnabled(True)
+            self.txt_window.setToolTip("定量窗口：用于设定 Cas 酶切割诱导突变/切口分析宽度。以切割点为中心向两侧各延伸此 bp 数（默认 10）。")
+            self.txt_offset.setToolTip("切割位点偏移量：预计切割位点距离 sgRNA 3' 末尾的偏移量（SpCas9 默认 -3，即 PAM 上游 3bp 处切割）。")
 
         if "BE" in mode_text:
             self.txt_batch_excel.setPlaceholderText("选择 BE 分析表 (包含列: 样品名, 描述, sg, 原始序列, 原始碱基, 修改后碱基)...")

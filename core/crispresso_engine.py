@@ -276,20 +276,42 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str, log_cal
         existing_cols = [c for c in cols if c in df_res.columns]
         df_res = df_res[existing_cols]
         
+        def write_nhej_sheet(writer_obj):
+            df_res.to_excel(writer_obj, index=False, sheet_name="NHEJ Summary")
+            ws = writer_obj.sheets["NHEJ Summary"]
+            pct_cols = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
+            col_indices = [df_res.columns.get_loc(c) + 1 for c in pct_cols if c in df_res.columns]
+            for row in range(2, len(df_res) + 2):
+                for col_idx in col_indices:
+                    cell = ws.cell(row=row, column=col_idx)
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '0.00%'
+
+            # Add explanatory notes to NHEJ Summary below the table
+            note_start_row = len(df_res) + 4
+            notes = [
+                "【NHEJ 敲除与移码突变分析指标说明与计算公式】",
+                "1. wt_allele（野生型读段数）：在定量窗口内未发生任何插入缺失(Indel)且序列与参考序列完全一致的纯净读段数。",
+                "2. 3n_del / 3n_insert（整码缺失/插入读段数）：缺失或插入碱基数为 3 的整倍数（如 3, 6, 9 bp）。此突变不破坏阅读框（In-frame），通常保留部分蛋白活性。",
+                "3. 3n+1 / 3n+2（移码突变读段数）：缺失或插入碱基数不是 3 的倍数（如 1, 2, 4, 5 bp）。会导致切割位点下游所有密码子错乱（Frameshift）并提前终止，是造成基因功能彻底破坏(KO)的核心突变。",
+                "4. Substitutions（纯单碱基替换读段数）：在定量窗口内仅发生单碱基替换但无任何 Indel 的读段数（主要来源于测序或 PCR 错配噪音）。",
+                "5. TotalIndels（总 Indel 突变率%）：全部发生插入或缺失读段在总 Reads 中的比例。",
+                "   - 计算公式：TotalIndels = 全部 Indels (3n + 3n+1 + 3n+2) / (wt_allele + 全部 Indels + Substitutions)",
+                "6. Indels_non3n（移码突变率%）：所有引起蛋白移码的读段占总 Reads 的比例，是评估基因敲除破坏有效性的最关键金标准。",
+                "   - 计算公式：Indels_non3n = (3n+1_del + 3n+2_del + 3n+1_insert + 3n+2_insert) / 总 Reads",
+                "7. Indels_without_subs（排除点突变背景的 Indel 率%）：分母剔除纯单碱基替换噪音，更纯粹地反映 Cas 切割修复造成的 Indel 占比。",
+                "   - 计算公式：Indels_without_subs = 全部 Indels / (wt_allele + 全部 Indels)"
+            ]
+            for i, note in enumerate(notes):
+                ws.cell(row=note_start_row + i, column=1, value=note)
+
         try:
             with pd.ExcelWriter(outpath, engine='openpyxl') as writer:
-                df_res.to_excel(writer, index=False, sheet_name="NHEJ Summary")
-                ws = writer.sheets["NHEJ Summary"]
-                pct_cols = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
-                col_indices = [df_res.columns.get_loc(c) + 1 for c in pct_cols if c in df_res.columns]
-                for row in range(2, len(df_res) + 2):
-                    for col_idx in col_indices:
-                        cell = ws.cell(row=row, column=col_idx)
-                        if cell.value is not None and isinstance(cell.value, (int, float)):
-                            cell.number_format = '0.00%'
+                write_nhej_sheet(writer)
         except PermissionError:
             outpath = os.path.join(output_dir, f"{today_date}_NHEJ_Cleavage_分析结果汇总_最新.xlsx")
-            df_res.to_excel(outpath, index=False)
+            with pd.ExcelWriter(outpath, engine='openpyxl') as writer:
+                write_nhej_sheet(writer)
 
         return outpath
     else:
@@ -836,6 +858,23 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                     if cell.value is not None and isinstance(cell.value, (int, float)):
                         cell.number_format = '0.00%'
 
+            # Add explanatory notes to Sheet 1 below the table
+            note_start_row_m = len(df_main) + 4
+            notes_m = [
+                "【BE 目标编辑效率指标说明与计算公式】",
+                "1. 测序深度：覆盖该靶位点的总有效比对读段数 (Total Aligned Reads)。",
+                "2. 纯净编辑率%：在 sgRNA 靶区内发生 >=1 个目标碱基替换（如 A->G、C->T），且未发生任何 Indel 插入或缺失的读段占总 Reads 的比例。",
+                "   - 计算公式：纯净编辑率% = 靶区发生目标替换且无Indel的Reads / 总比对Reads",
+                "   - 应用场景：评估在细胞群体中获得无副产物纯净目标编辑产物的绝对比例。",
+                "3. 无Indel编辑率%：在未被 Cas 酶切破坏(无Indel)的读段中，发生目标碱基替换的读段比例。",
+                "   - 计算公式：无Indel编辑率% = 靶区发生目标替换且无Indel的Reads / 靶区无Indel的Reads (Non-Indel Reads)",
+                "   - 应用场景：剥离 Cas 双链切割造成的 Indel 副产物背景，专门评估脱氨酶本身的实际催化转化活性。",
+                "4. 列 1, 2, 3 ... 20（单碱基位点目标突变效率%）：sgRNA 第 1 位至第 20 位上目标产物（如 A->G、C->T）的突变百分比。",
+                "5. 列 u1, u2, u3 ... u20（非预期杂突变率%）：sgRNA 对应位点上突变成除原始碱基和目标产物之外的其他杂碱基的比例（如 ABE 中原始为 A，目标为 G，则 u 列为突变为 C 或 T 的非预期副产物比例）。"
+            ]
+            for i, note in enumerate(notes_m):
+                ws_m.cell(row=note_start_row_m + i, column=1, value=note)
+
             # Write Sheet 2: Sub1 Byproduct Efficiencies
             df_sub1.to_excel(writer_obj, index=False, sheet_name=sheet_sub1)
             ws_s1 = writer_obj.sheets[sheet_sub1]
@@ -868,6 +907,24 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                     cell = ws_ind.cell(row=row, column=col_idx)
                     if cell.value is not None and isinstance(cell.value, (int, float)):
                         cell.number_format = '0.00%'
+
+            # Add explanatory notes to Sheet 4 below the table
+            note_start_row_ind = len(df_indel) + 4
+            notes_ind = [
+                "【BE 靶区 Indel 与移码突变指标说明与计算公式】",
+                "1. wt_allele（野生型读段数）：sgRNA 靶区序列未发生任何插入缺失(Indel)且与参考序列完全一致的读段数。",
+                "2. 3n_del / 3n_insert（整码缺失/插入）：缺失或插入 3 的整倍数个碱基（如 3, 6, 9 bp），不破坏阅读框（In-frame），通常保留部分蛋白活性。",
+                "3. 3n+1 / 3n+2（移码突变）：缺失或插入非 3 的倍数个碱基（如 1, 2, 4, 5 bp），引发密码子错乱（Frameshift）并提前终止，是造成基因功能破坏(KO)的核心突变。",
+                "4. Substitutions（纯替换读段数）：在靶区内仅发生单碱基替换而无任何 Indel 的读段数（主要来源于测序或 PCR 错配噪音）。",
+                "5. TotalIndels（总 Indel 突变率%）：全部发生插入或缺失读段在总 Reads 中的比例。",
+                "   - 计算公式：TotalIndels = 全部 Indels (3n + 3n+1 + 3n+2) / (wt_allele + 全部 Indels + Substitutions)",
+                "6. Indels_non3n（移码突变率%）：所有引起蛋白移码的读段占总 Reads 的比例，是评估基因敲除破坏有效性的最关键指标。",
+                "   - 计算公式：Indels_non3n = (3n+1_del + 3n+2_del + 3n+1_insert + 3n+2_insert) / 总 Reads",
+                "7. Indels_without_subs（排除点突变背景的 Indel 率%）：分母剔除纯单碱基替换噪音，更纯粹反映切割修复造成的 Indel 占比。",
+                "   - 计算公式：Indels_without_subs = 全部 Indels / (wt_allele + 全部 Indels)"
+            ]
+            for i, note in enumerate(notes_ind):
+                ws_ind.cell(row=note_start_row_ind + i, column=1, value=note)
 
             # Write Sheet 5: sgRNA Reads Breakdown
             df_breakdown.to_excel(writer_obj, index=False, sheet_name=sheet_bd)
