@@ -98,18 +98,18 @@ $$
 $$
   
 #### 2. 碱基编辑分析指标 (BE 汇总表)
-* **`纯净编辑效率% (With Subs, No Indel / Total)`（绝对纯净编辑效率）**：
+* **`纯净编辑率%`（绝对纯净编辑效率）**：
   评估细胞或组织群体中获得**无副产物纯净目标编辑产物**的绝对百分比。要求在 sgRNA 靶区范围内**至少发生 1 个目标碱基替换**（如 ABE 的 $A \to G$，CBE 的 $C \to T$），且**在 sg 范围内完全没有发生任何 Indel 插入或缺失**。
 
   $$
-  \text{纯净编辑效率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{所有有效比对 Reads (Total Aligned Reads)}}
+  \text{纯净编辑率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{所有有效比对 Reads (Total Aligned Reads)}}
   $$
 
-* **`未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)`（未破坏序列中的编辑转化率）**：
+* **`无Indel编辑率%`（未破坏序列中的编辑转化率）**：
   剥离 Cas 蛋白双链切割产生的 Indel 副产物背景，专门评估脱氨酶本身的有效催化转化活性。分母剔除所有在 sg 范围内发生 Indel 的 Reads。
 
   $$
-  \text{未破坏Reads中编辑率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{sg 范围内未发生任何 Indel 的 Reads (Intact Reads)}}
+  \text{无Indel编辑率\%} = \frac{\text{sg 内发生 }\ge 1 \text{ 个目标替换且无任何 Indel 的 Reads}}{\text{sg 范围内未发生任何 Indel 的 Reads (Non-Indel Reads)}}
   $$
 
 * **列 `1, 2, 3 ... 20`（单碱基位点目标编辑效率）**：

@@ -320,16 +320,15 @@ def compute_be_overall_editing_metrics(
     s_base_from: str,
     s_base_to: str,
     ref_dict: Optional[Dict[str, Any]] = None
-) -> Tuple[Optional[float], Optional[float]]:
+) -> Tuple[Optional[float], Optional[float], Optional[Dict[str, Any]]]:
     """
     Computes overall editing metrics strictly within the sgRNA window:
-    1. 纯净编辑效率% (With Subs, No Indel / Total):
-       Reads with >=1 target substitution (from_base -> to_base) in sgRNA AND no Indels in sgRNA / Total Aligned Reads
-    2. 未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel):
-       Reads with >=1 target substitution (from_base -> to_base) in sgRNA AND no Indels in sgRNA / Reads with no Indels in sgRNA
+    1. 纯净编辑率%: Reads with >=1 target substitution in sgRNA AND no Indels in sgRNA / Total Aligned Reads
+    2. 无Indel编辑率%: Reads with >=1 target substitution in sgRNA AND no Indels in sgRNA / Reads with no Indels in sgRNA
+    3. Breakdown dict for unedited, pure any sub, and indel reads
     """
     if not target_dir or not os.path.exists(target_dir):
-        return None, None
+        return None, None, None
 
     zip_path = os.path.join(target_dir, "Alleles_frequency_table.zip")
     txt_path = None
@@ -340,12 +339,12 @@ def compute_be_overall_editing_metrics(
                 break
     
     if not os.path.exists(zip_path) and not txt_path:
-        return None, None
+        return None, None, None
 
     sg_clean = (s_sg or "").strip().upper()
     amp_clean = (s_amp or "").strip().upper()
     if not sg_clean:
-        return None, None
+        return None, None, None
 
     sg_start = None
     sg_end = None
@@ -378,11 +377,14 @@ def compute_be_overall_editing_metrics(
             df = pd.read_csv(txt_path, sep='\t')
 
         if df.empty or '#Reads' not in df.columns:
-            return None, None
+            return None, None, None
 
-        total_reads = 0
-        pure_edited_reads = 0
-        non_indel_reads = 0
+        total_reads = 0.0
+        pure_edited_reads = 0.0
+        non_indel_reads = 0.0
+        unedited_reads = 0.0
+        pure_any_sub_reads = 0.0
+        indel_reads = 0.0
         is_full_amp = (os.path.exists(zip_path) and sg_start is not None and sg_end is not None)
 
         for _, row in df.iterrows():
@@ -410,8 +412,15 @@ def compute_be_overall_editing_metrics(
                 sub_ref = r_seq
 
             has_indel = ('-' in sub_aln) or ('-' in sub_ref)
-            if not has_indel:
+            if has_indel:
+                indel_reads += reads
+            else:
                 non_indel_reads += reads
+                if sub_aln == sub_ref:
+                    unedited_reads += reads
+                else:
+                    pure_any_sub_reads += reads
+
                 has_target_sub = False
                 for a, r in zip(sub_aln, sub_ref):
                     if r in from_bases and a in target_bases:
@@ -422,10 +431,21 @@ def compute_be_overall_editing_metrics(
 
         pct_pure_total = (pure_edited_reads / total_reads) if total_reads > 0 else 0.0
         pct_pure_non_indel = (pure_edited_reads / non_indel_reads) if non_indel_reads > 0 else 0.0
-        return pct_pure_total, pct_pure_non_indel
+
+        breakdown = {
+            '总比对Reads': int(total_reads),
+            '未编辑Reads': int(unedited_reads),
+            '未编辑率%': (unedited_reads / total_reads) if total_reads > 0 else 0.0,
+            '无Indel突变Reads': int(pure_any_sub_reads),
+            '无Indel突变率%': (pure_any_sub_reads / total_reads) if total_reads > 0 else 0.0,
+            '含Indel读段Reads': int(indel_reads),
+            'Indel率%': (indel_reads / total_reads) if total_reads > 0 else 0.0,
+        }
+
+        return pct_pure_total, pct_pure_non_indel, breakdown
     except Exception as e:
         print(f"Error calculating BE overall metrics: {e}")
-        return None, None
+        return None, None, None
 
 def extract_single_be_record(
     s_name: str,
@@ -448,8 +468,8 @@ def extract_single_be_record(
         '原始碱基': target_from,
         '修改后碱基': target_to,
         '测序深度': 0,
-        '纯净编辑效率% (With Subs, No Indel / Total)': overall_pure_eff,
-        '未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)': overall_intact_eff
+        '纯净编辑率%': overall_pure_eff,
+        '无Indel编辑率%': overall_intact_eff
     }
     for p in range(1, sg_len + 1):
         rec[p] = None
@@ -510,6 +530,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
     records_be_sub1 = []
     records_be_sub2 = []
     records_indel = []
+    records_breakdown = []
     max_sg_len = 20
 
     main_from_to_pairs = set()
@@ -557,10 +578,17 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, None, None, None)
             rec_s1 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub1_base, None, None, None)
             rec_s2 = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, sub2_base, None, None, None)
+            rec_breakdown = {
+                '样品名': s_name, '描述': s_desc,
+                '总比对Reads': 0, '未编辑Reads': 0, '未编辑率%': 0.0,
+                '无Indel突变Reads': 0, '无Indel突变率%': 0.0,
+                '含Indel读段Reads': 0, 'Indel率%': 0.0
+            }
             records_be_main.append(rec_main)
             records_be_sub1.append(rec_s1)
             records_be_sub2.append(rec_s2)
             records_indel.append(record_indel)
+            records_breakdown.append(rec_breakdown)
             continue
 
         subfolders = [os.path.join(sample_dir, f) for f in os.listdir(sample_dir) if os.path.isdir(os.path.join(sample_dir, f))]
@@ -705,9 +733,20 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                         sub_col_indices[pos] = pos
 
         # Compute overall BE editing efficiency metrics for Main, Sub1, Sub2
-        m_pure, m_intact = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, s_base_to, ref_dict)
-        s1_pure, s1_intact = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, sub1_base, ref_dict)
-        s2_pure, s2_intact = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, sub2_base, ref_dict)
+        m_pure, m_intact, b_dict = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, s_base_to, ref_dict)
+        s1_pure, s1_intact, _ = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, sub1_base, ref_dict)
+        s2_pure, s2_intact, _ = compute_be_overall_editing_metrics(target_dir, s_sg, s_amp, s_base_from, sub2_base, ref_dict)
+
+        if b_dict is not None:
+            rec_breakdown = {'样品名': s_name, '描述': s_desc, **b_dict}
+        else:
+            rec_breakdown = {
+                '样品名': s_name, '描述': s_desc,
+                '总比对Reads': 0, '未编辑Reads': 0, '未编辑率%': 0.0,
+                '无Indel突变Reads': 0, '无Indel突变率%': 0.0,
+                '含Indel读段Reads': 0, 'Indel率%': 0.0
+            }
+        records_breakdown.append(rec_breakdown)
 
         # Extract 3 records: Main (Target), Sub1 (Byproduct 1), Sub2 (Byproduct 2)
         rec_main = extract_single_be_record(s_name, s_desc, s_sg, s_base_from, s_base_to, df_sg, df_sub, offset, sub_col_indices, m_pure, m_intact)
@@ -729,8 +768,8 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
     if records_be_main:
         base_cols = [
             '样品名', '描述', '原始碱基', '修改后碱基', '测序深度',
-            '纯净编辑效率% (With Subs, No Indel / Total)',
-            '未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)'
+            '纯净编辑率%',
+            '无Indel编辑率%'
         ]
         
         def format_be_df(records):
@@ -753,6 +792,16 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
         existing_ind_cols = [c for c in indel_cols if c in df_indel.columns]
         df_indel = df_indel[existing_ind_cols]
 
+        df_breakdown = pd.DataFrame(records_breakdown)
+        breakdown_cols = [
+            '样品名', '描述', '总比对Reads',
+            '未编辑Reads', '未编辑率%',
+            '无Indel突变Reads', '无Indel突变率%',
+            '含Indel读段Reads', 'Indel率%'
+        ]
+        existing_bd_cols = [c for c in breakdown_cols if c in df_breakdown.columns]
+        df_breakdown = df_breakdown[existing_bd_cols]
+
         # Determine descriptive Sheet names
         main_tag = list(main_from_to_pairs)[0] if len(main_from_to_pairs) == 1 else "目标"
         s1_tag = list(sub1_from_to_pairs)[0] if len(sub1_from_to_pairs) == 1 else "副产物1"
@@ -762,15 +811,17 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
         sheet_sub1 = f"BE 副产物_{s1_tag} (副)"
         sheet_sub2 = f"BE 副产物_{s2_tag} (副)"
         sheet_ind = "BE Indel与移码分析 (副)"
+        sheet_bd = "BE 靶区读段分类统计 (副)"
 
         # Ensure sheet names <= 31 chars
         if len(sheet_main) > 31: sheet_main = "BE 目标编辑效率 (主)"
         if len(sheet_sub1) > 31: sheet_sub1 = f"BE 副产物_{s1_tag[:10]} (副)"
         if len(sheet_sub2) > 31: sheet_sub2 = f"BE 副产物_{s2_tag[:10]} (副)"
+        if len(sheet_bd) > 31: sheet_bd = "BE 靶区读段分类统计 (副)"
 
         overall_eff_cols = [
-            '纯净编辑效率% (With Subs, No Indel / Total)',
-            '未破坏Reads中编辑率% (With Subs, No Indel / Non-Indel)'
+            '纯净编辑率%',
+            '无Indel编辑率%'
         ]
 
         def write_all_sheets(writer_obj):
@@ -817,6 +868,36 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                     cell = ws_ind.cell(row=row, column=col_idx)
                     if cell.value is not None and isinstance(cell.value, (int, float)):
                         cell.number_format = '0.00%'
+
+            # Write Sheet 5: sgRNA Reads Breakdown
+            df_breakdown.to_excel(writer_obj, index=False, sheet_name=sheet_bd)
+            ws_bd = writer_obj.sheets[sheet_bd]
+            pct_bd = ['未编辑率%', '无Indel突变率%', 'Indel率%']
+            col_bd_idx = [df_breakdown.columns.get_loc(c) + 1 for c in pct_bd if c in df_breakdown.columns]
+            for row in range(2, len(df_breakdown) + 2):
+                for col_idx in col_bd_idx:
+                    cell = ws_bd.cell(row=row, column=col_idx)
+                    if cell.value is not None and isinstance(cell.value, (int, float)):
+                        cell.number_format = '0.00%'
+
+            # Add explanatory notes to Sheet 5 below the table
+            note_start_row = len(df_breakdown) + 4
+            notes = [
+                "【BE 靶区读段分类统计指标说明与计算公式】",
+                "1. 未编辑Reads (Unedited Reads)：sgRNA 靶区内读段序列与参考基因组完全一致，未发生任何碱基替换(Sub)或插入缺失(Indel)。",
+                "   - 未编辑率% = 未编辑Reads / 总比对Reads",
+                "2. 无Indel突变Reads (Pure Substitution Reads)：sgRNA 靶区内读段未发生任何 Indel，但发生至少 1 个任意类型的碱基替换。",
+                "   - 无Indel突变率% = 无Indel突变Reads / 总比对Reads",
+                "3. 含Indel读段Reads (Indel Reads)：sgRNA 靶区内读段发生了至少 1 个插入或缺失(Indel)。",
+                "   - Indel率% = 含Indel读段Reads / 总比对Reads",
+                "4. 守恒关系：",
+                "   - 读段守恒：未编辑Reads + 无Indel突变Reads + 含Indel读段Reads = 总比对Reads",
+                "   - 比例守恒：未编辑率% + 无Indel突变率% + Indel率% = 100.00%",
+                "5. 与前序 Sheet【纯净编辑率%】的关系：",
+                "   - Sheet 1~3 的【纯净编辑率%】指发生“特定目标类型替换（如 A->G）且无 Indel”的比例，属于本表中【无Indel突变Reads】的一个目标子集。"
+            ]
+            for i, note in enumerate(notes):
+                ws_bd.cell(row=note_start_row + i, column=1, value=note)
 
         try:
             with pd.ExcelWriter(outpath, engine='openpyxl') as writer:
