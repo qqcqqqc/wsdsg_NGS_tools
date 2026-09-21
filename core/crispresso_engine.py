@@ -226,6 +226,68 @@ def process_nhej_cleavage_file(filepath: str, sample_name: str) -> Dict[str, Any
         "Indels_without_subs": pct_without_subs,
     }
 
+def format_excel_sheet_layout(ws, df: pd.DataFrame, pct_cols: Optional[List[str]] = None):
+    """
+    Format Excel sheet rows and columns:
+    1. Header row: height=26, font bold, centered vertically & horizontally.
+    2. Data rows: height=20, centered vertically (left-aligned for text names, centered for numbers/percentages).
+    3. Percentage format: '0.00%' applied to pct_cols.
+    4. Auto-fit column widths based on cell text lengths in header and data rows, ensuring no text clipping.
+    """
+    try:
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import Alignment, Font
+    except ImportError:
+        return
+
+    header_font = Font(name='Microsoft YaHei', size=10, bold=True)
+    regular_font = Font(name='Microsoft YaHei', size=10)
+    
+    # 1. Header row
+    ws.row_dimensions[1].height = 26
+    for col_idx in range(1, len(df.columns) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
+
+    # 2. Data rows
+    num_data_rows = len(df)
+    for r in range(2, num_data_rows + 2):
+        ws.row_dimensions[r].height = 20
+        for col_idx in range(1, len(df.columns) + 1):
+            cell = ws.cell(row=r, column=col_idx)
+            cell.font = regular_font
+            col_name = str(df.columns[col_idx - 1])
+            if col_name in ['样品名', 'Sample', '描述']:
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+            else:
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+
+    # 3. Format percentage columns
+    if pct_cols:
+        col_indices = [df.columns.get_loc(c) + 1 for c in pct_cols if c in df.columns]
+        for r in range(2, num_data_rows + 2):
+            for c_idx in col_indices:
+                cell = ws.cell(row=r, column=c_idx)
+                if cell.value is not None and isinstance(cell.value, (int, float)):
+                    cell.number_format = '0.00%'
+
+    # 4. Auto-fit column widths based on header and data content (ignoring notes below the table)
+    for col_idx in range(1, len(df.columns) + 1):
+        col_letter = get_column_letter(col_idx)
+        max_w = 0.0
+        for r in range(1, num_data_rows + 2):
+            val = ws.cell(row=r, column=col_idx).value
+            if val is not None:
+                if pct_cols and df.columns[col_idx - 1] in pct_cols and isinstance(val, (int, float)):
+                    s = f"{val * 100:.2f}%"
+                else:
+                    s = str(val)
+                w = sum(2.1 if ord(ch) > 127 else 1.1 for ch in s)
+                if w > max_w:
+                    max_w = w
+        ws.column_dimensions[col_letter].width = max(max_w + 4.0, 9.5)
+
 def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str, log_callback: Optional[Callable[[str], None]] = None) -> str:
     """Summarize NHEJ results using cleavage_sum_QQC.py logic with date prefix and numeric percentage formatting."""
     results = []
@@ -280,12 +342,7 @@ def summarize_nhej_batch(samples: List[Dict[str, str]], output_dir: str, log_cal
             df_res.to_excel(writer_obj, index=False, sheet_name="NHEJ Summary")
             ws = writer_obj.sheets["NHEJ Summary"]
             pct_cols = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
-            col_indices = [df_res.columns.get_loc(c) + 1 for c in pct_cols if c in df_res.columns]
-            for row in range(2, len(df_res) + 2):
-                for col_idx in col_indices:
-                    cell = ws.cell(row=row, column=col_idx)
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '0.00%'
+            format_excel_sheet_layout(ws, df_res, pct_cols)
 
             # Add explanatory notes to NHEJ Summary below the table
             note_start_row = len(df_res) + 4
@@ -463,8 +520,8 @@ def compute_be_overall_editing_metrics(
             '未编辑率%': (unedited_reads / total_reads) if total_reads > 0 else 0.0,
             '无Indel突变率%': (pure_any_sub_reads / total_reads) if total_reads > 0 else 0.0,
             'Indel率%': (indel_reads / total_reads) if total_reads > 0 else 0.0,
-            '无Indel未编辑率%': (unedited_reads / intact_reads) if intact_reads > 0 else 0.0,
-            '无Indel总突变率%': (pure_any_sub_reads / intact_reads) if intact_reads > 0 else 0.0,
+            '未破坏未编辑率%': (unedited_reads / intact_reads) if intact_reads > 0 else 0.0,
+            '未破坏突变转化率%': (pure_any_sub_reads / intact_reads) if intact_reads > 0 else 0.0,
         }
 
         return pct_pure_total, pct_pure_non_indel, breakdown
@@ -607,7 +664,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 '样品名': s_name, '描述': s_desc,
                 '总比对Reads': 0, '未编辑Reads': 0, '无Indel突变Reads': 0, '含Indel读段Reads': 0,
                 '未编辑率%': 0.0, '无Indel突变率%': 0.0, 'Indel率%': 0.0,
-                '无Indel未编辑率%': 0.0, '无Indel总突变率%': 0.0
+                '未破坏未编辑率%': 0.0, '未破坏突变转化率%': 0.0
             }
             records_be_main.append(rec_main)
             records_be_sub1.append(rec_s1)
@@ -769,7 +826,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 '样品名': s_name, '描述': s_desc,
                 '总比对Reads': 0, '未编辑Reads': 0, '无Indel突变Reads': 0, '含Indel读段Reads': 0,
                 '未编辑率%': 0.0, '无Indel突变率%': 0.0, 'Indel率%': 0.0,
-                '无Indel未编辑率%': 0.0, '无Indel总突变率%': 0.0
+                '未破坏未编辑率%': 0.0, '未破坏突变转化率%': 0.0
             }
         records_breakdown.append(rec_breakdown)
 
@@ -822,7 +879,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             '样品名', '描述',
             '总比对Reads', '未编辑Reads', '无Indel突变Reads', '含Indel读段Reads',
             '未编辑率%', '无Indel突变率%', 'Indel率%',
-            '无Indel未编辑率%', '无Indel总突变率%'
+            '未破坏未编辑率%', '未破坏突变转化率%'
         ]
         existing_bd_cols = [c for c in breakdown_cols if c in df_breakdown.columns]
         df_breakdown = df_breakdown[existing_bd_cols]
@@ -854,12 +911,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             df_main.to_excel(writer_obj, index=False, sheet_name=sheet_main)
             ws_m = writer_obj.sheets[sheet_main]
             pct_m = overall_eff_cols + pos_main + unspec_main
-            col_m_idx = [df_main.columns.get_loc(c) + 1 for c in pct_m if c in df_main.columns]
-            for row in range(2, len(df_main) + 2):
-                for col_idx in col_m_idx:
-                    cell = ws_m.cell(row=row, column=col_idx)
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '0.00%'
+            format_excel_sheet_layout(ws_m, df_main, pct_m)
 
             # Add explanatory notes to Sheet 1 below the table
             note_start_row_m = len(df_main) + 4
@@ -882,34 +934,19 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             df_sub1.to_excel(writer_obj, index=False, sheet_name=sheet_sub1)
             ws_s1 = writer_obj.sheets[sheet_sub1]
             pct_s1 = overall_eff_cols + pos_sub1 + unspec_sub1
-            col_s1_idx = [df_sub1.columns.get_loc(c) + 1 for c in pct_s1 if c in df_sub1.columns]
-            for row in range(2, len(df_sub1) + 2):
-                for col_idx in col_s1_idx:
-                    cell = ws_s1.cell(row=row, column=col_idx)
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '0.00%'
+            format_excel_sheet_layout(ws_s1, df_sub1, pct_s1)
 
             # Write Sheet 3: Sub2 Byproduct Efficiencies
             df_sub2.to_excel(writer_obj, index=False, sheet_name=sheet_sub2)
             ws_s2 = writer_obj.sheets[sheet_sub2]
             pct_s2 = overall_eff_cols + pos_sub2 + unspec_sub2
-            col_s2_idx = [df_sub2.columns.get_loc(c) + 1 for c in pct_s2 if c in df_sub2.columns]
-            for row in range(2, len(df_sub2) + 2):
-                for col_idx in col_s2_idx:
-                    cell = ws_s2.cell(row=row, column=col_idx)
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '0.00%'
+            format_excel_sheet_layout(ws_s2, df_sub2, pct_s2)
 
             # Write Sheet 4: Indel & Frameshift Breakdown
             df_indel.to_excel(writer_obj, index=False, sheet_name=sheet_ind)
             ws_ind = writer_obj.sheets[sheet_ind]
             pct_ind = ["TotalIndels", "Indels_non3n", "Indels_without_subs"]
-            col_ind_idx = [df_indel.columns.get_loc(c) + 1 for c in pct_ind if c in df_indel.columns]
-            for row in range(2, len(df_indel) + 2):
-                for col_idx in col_ind_idx:
-                    cell = ws_ind.cell(row=row, column=col_idx)
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '0.00%'
+            format_excel_sheet_layout(ws_ind, df_indel, pct_ind)
 
             # Add explanatory notes to Sheet 4 below the table
             note_start_row_ind = len(df_indel) + 4
@@ -932,13 +969,8 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             # Write Sheet 5: sgRNA Reads Breakdown
             df_breakdown.to_excel(writer_obj, index=False, sheet_name=sheet_bd)
             ws_bd = writer_obj.sheets[sheet_bd]
-            pct_bd = ['未编辑率%', '无Indel突变率%', 'Indel率%', '无Indel未编辑率%', '无Indel总突变率%']
-            col_bd_idx = [df_breakdown.columns.get_loc(c) + 1 for c in pct_bd if c in df_breakdown.columns]
-            for row in range(2, len(df_breakdown) + 2):
-                for col_idx in col_bd_idx:
-                    cell = ws_bd.cell(row=row, column=col_idx)
-                    if cell.value is not None and isinstance(cell.value, (int, float)):
-                        cell.number_format = '0.00%'
+            pct_bd = ['未编辑率%', '无Indel突变率%', 'Indel率%', '未破坏未编辑率%', '未破坏突变转化率%']
+            format_excel_sheet_layout(ws_bd, df_breakdown, pct_bd)
 
             # Add explanatory notes to Sheet 5 below the table
             note_start_row = len(df_breakdown) + 4
@@ -956,15 +988,15 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 "• 全局守恒关系：未编辑Reads + 无Indel突变Reads + 含Indel读段Reads = 总比对Reads（对应三项百分比相加 = 100.00%）",
                 "",
                 "三、未破坏读段内部转化率（分母为：总比对Reads - 含Indel读段Reads，即无Indel的纯净读段池）：",
-                "1. 无Indel未编辑率% = 未编辑Reads / (总比对Reads - 含Indel读段Reads)",
+                "1. 未破坏未编辑率% = 未编辑Reads / (总比对Reads - 含Indel读段Reads)",
                 "   - 意义：在所有未发生 Indel 破坏的读段中，完全保持野生型未被编辑的比例。",
-                "2. 无Indel总突变率% = 无Indel突变Reads / (总比对Reads - 含Indel读段Reads)",
-                "   - 意义：在所有未发生 Indel 破坏的读段中，成功发生脱氨基突变的整体转化效率。",
-                "• 内部守恒关系：无Indel未编辑率% + 无Indel总突变率% = 100.00%",
+                "2. 未破坏突变转化率% = 无Indel突变Reads / (总比对Reads - 含Indel读段Reads)",
+                "   - 意义：在所有未发生 Indel 破坏的读段中，成功发生脱氨基突变的整体转化效率（脱氨酶活性核心体现）。",
+                "• 内部守恒关系：未破坏未编辑率% + 未破坏突变转化率% = 100.00%",
                 "",
                 "四、与 Sheet 1~3【纯净编辑率%】与【无Indel编辑率%】的关系：",
                 "• Sheet 1~3 的【纯净编辑率%】（目标替换 / 总比对Reads）是本表【无Indel突变率%】的目标特定子集。",
-                "• Sheet 1~3 的【无Indel编辑率%】（目标替换 / 无Indel Reads）是本表【无Indel总突变率%】的目标特定子集。"
+                "• Sheet 1~3 的【无Indel编辑率%】（目标替换 / 无Indel Reads）是本表【未破坏突变转化率%】的目标特定子集。"
             ]
             for i, note in enumerate(notes):
                 ws_bd.cell(row=note_start_row + i, column=1, value=note)
