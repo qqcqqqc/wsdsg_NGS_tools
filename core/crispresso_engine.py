@@ -427,20 +427,20 @@ def compute_be_overall_editing_metrics(
 
     sg_start = None
     sg_end = None
-    if ref_dict and 'sgRNA_intervals' in ref_dict and ref_dict['sgRNA_intervals']:
-        try:
-            sg_start = int(ref_dict['sgRNA_intervals'][0][0])
-            sg_end = int(ref_dict['sgRNA_intervals'][0][1])
-        except Exception:
-            pass
-
-    if sg_start is None and amp_clean:
+    if amp_clean and sg_clean:
         if sg_clean not in amp_clean and sg_clean in rc(amp_clean):
             amp_clean = rc(amp_clean)
         idx = amp_clean.find(sg_clean)
         if idx != -1:
             sg_start = idx
             sg_end = idx + len(sg_clean) - 1
+
+    if sg_start is None and ref_dict and 'sgRNA_intervals' in ref_dict and ref_dict['sgRNA_intervals']:
+        try:
+            sg_start = int(ref_dict['sgRNA_intervals'][0][0])
+            sg_end = int(ref_dict['sgRNA_intervals'][0][1])
+        except Exception:
+            pass
 
     tf_clean = (s_base_from or 'A').strip().upper()
     tt_clean = (s_base_to or 'G').strip().upper()
@@ -781,12 +781,24 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
             if m_sg:
                 run_sg = m_sg.group(1).upper()
 
-        if run_sg:
-            if not s_sg or (s_sg.strip().upper() in run_sg and len(s_sg.strip()) < len(run_sg)):
-                s_sg = run_sg
-                sg_len = len(s_sg)
-                if sg_len > max_sg_len:
-                    max_sg_len = sg_len
+        if run_sg and not s_sg:
+            s_sg = run_sg
+            sg_len = len(s_sg)
+            if sg_len > max_sg_len:
+                max_sg_len = sg_len
+
+        # If user specified a truncated/subsegment s_sg in Excel, adjust offset so col 1 matches s_sg start
+        shift = 0
+        if run_sg and s_sg:
+            s_clean = s_sg.strip().upper()
+            if s_clean in run_sg:
+                shift = run_sg.find(s_clean)
+            elif rc(s_clean) in run_sg:
+                shift = run_sg.find(rc(s_clean))
+            elif sg_start_exact is not None and sg_intervals:
+                shift = sg_start_exact - int(sg_intervals[0][0])
+        if offset is not None:
+            offset -= shift
 
         # Gap-matching fallback if info.json offset is not present
         df_sg = None
