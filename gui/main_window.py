@@ -14,7 +14,7 @@ from gui.tab_demux import DemuxTab
 from gui.tab_crispresso import CRISPRessoTab
 from core.env_checker import check_environment
 
-VERSION = "v2.3.3"
+VERSION = "v2.4.0"
 
 class EnvCheckThread(QThread):
     """
