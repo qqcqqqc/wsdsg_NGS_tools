@@ -571,13 +571,13 @@ class CRISPRessoTab(QWidget):
         self.btn_run.clicked.connect(self.start_analysis)
         out_layout.addWidget(self.btn_run)
 
-        self.btn_summary_only = QPushButton("📈 仅重新生成汇总", self)
+        self.btn_summary_only = QPushButton("📈 重新生成汇总表", self)
         self.btn_summary_only.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #f57c00; color: white; padding: 6px 14px;")
         self.btn_summary_only.setToolTip("当已有 CRISPResso2 运行结果时，无需重新比对测序文件，直接根据 Excel 信息表和结果目录秒级提取并生成汇总 Excel 表格！")
         self.btn_summary_only.clicked.connect(self.start_summary_only)
         out_layout.addWidget(self.btn_summary_only)
 
-        self.btn_refine_plots = QPushButton("🖼️ 批量更新绘图窗口与HTML", self)
+        self.btn_refine_plots = QPushButton("🖼️ 批量更新HTML", self)
         self.btn_refine_plots.setStyleSheet("font-weight: bold; font-size: 14px; background-color: #7b1fa2; color: white; padding: 6px 14px;")
         self.btn_refine_plots.setToolTip("无需重新比对分析测序文件！根据上方设置的【绘图窗口(sg -/+ bp)】，秒级批量更新输出目录中所有已分析样本的 Figure 2b、Figure 9 及 HTML 报告！")
         self.btn_refine_plots.clicked.connect(self.start_refine_plots)
