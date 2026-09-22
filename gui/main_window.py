@@ -1,5 +1,6 @@
 import sys
 import os
+import shutil
 import subprocess
 import urllib.request
 import json
@@ -14,7 +15,7 @@ from gui.tab_demux import DemuxTab
 from gui.tab_crispresso import CRISPRessoTab
 from core.env_checker import check_environment
 
-VERSION = "v2.4.0"
+VERSION = "v2.3.4"
 
 class EnvCheckThread(QThread):
     """
@@ -322,19 +323,80 @@ class MainWindow(QMainWindow):
 
     def check_software_update(self):
         """
-        Check for latest software updates via git pull or GitHub API.
+        Check for latest software updates via git pull (with explicit repo root)
+        or fallback to GitHub API/Releases check.
         """
         QApplication.setOverrideCursor(Qt.WaitCursor)
+        repo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        git_dir = os.path.join(repo_dir, ".git")
+
         try:
             # 1. Try git pull if user is running from git repo
-            if os.path.exists(os.path.join(os.path.dirname(__file__), "..", ".git")):
-                res = subprocess.run(["git", "pull", "origin", "main"], capture_output=True, text=True, timeout=10)
+            if os.path.exists(git_dir):
+                git_bin = shutil.which("git")
+                if not git_bin:
+                    QApplication.restoreOverrideCursor()
+                    QMessageBox.warning(
+                        self,
+                        "检查软件更新",
+                        f"⚠️ 检测到当前运行于源码仓库，但未在系统环境变量 PATH 中找到 `git` 命令。\n"
+                        f"请在终端中手动更新，或访问仓库下载："
+                        f"\nhttps://github.com/qqcqqqc/wsdsg_NGS_tools"
+                    )
+                    return
+
+                try:
+                    res = subprocess.run(
+                        ["git", "pull", "origin", "main"],
+                        cwd=repo_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=25,
+                        encoding="utf-8",
+                        errors="replace"
+                    )
+                except subprocess.TimeoutExpired:
+                    QApplication.restoreOverrideCursor()
+                    QMessageBox.warning(
+                        self,
+                        "检查软件更新超时",
+                        "⚠️ 连接 GitHub 仓库超时（25秒）！\n\n"
+                        "原因：国内直连 GitHub 网络经常存在波动或丢包。\n"
+                        "建议：请开启网络代理/加速器后重试，或在项目目录下打开终端手动执行 `git pull`。"
+                    )
+                    return
+
                 QApplication.restoreOverrideCursor()
                 if res.returncode == 0:
-                    if "Already up to date" in res.stdout or "已经是最新的" in res.stdout:
+                    out_text = (res.stdout or "").strip()
+                    if "Already up to date" in out_text or "已经是最新的" in out_text:
                         QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({VERSION})！无需更新。")
                     else:
-                        QMessageBox.information(self, "更新成功", "🎉 发现并成功拉取了最新版本的代码！\n请重启软件以生效最新功能！")
+                        QMessageBox.information(
+                            self,
+                            "更新成功",
+                            f"🎉 发现并成功拉取了最新版本的代码！\n\n"
+                            f"更新概要:\n{out_text[:200]}\n\n"
+                            f"请重启软件以生效最新功能！"
+                        )
+                    return
+                else:
+                    err_msg = (res.stderr or res.stdout or "").strip()
+                    if any(k in err_msg for k in ["Could not resolve host", "Failed to connect", "Connection refused", "timed out", "SSL"]):
+                        reason = "网络连接失败，无法连接到 GitHub 服务器。请检查网络或开启代理。"
+                    elif any(k in err_msg for k in ["Your local changes", "conflict", "overwritten by merge"]):
+                        reason = "本地代码存在未提交的修改，与云端更新发生冲突。建议在终端执行 git stash 或备份后重试。"
+                    else:
+                        reason = f"Git 执行异常 (返回码 {res.returncode})。"
+
+                    QMessageBox.warning(
+                        self,
+                        "自动拉取更新失败",
+                        f"⚠️ Git 自动更新未能完成！\n\n"
+                        f"可能原因: {reason}\n\n"
+                        f"错误日志:\n{err_msg[:260]}\n\n"
+                        f"建议：可在终端项目根目录下手动执行 `git pull origin main` 查看具体详情。"
+                    )
                     return
 
             # 2. Fallback to GitHub API check for standalone EXE / non-git users
@@ -342,28 +404,40 @@ class MainWindow(QMainWindow):
                 "https://api.github.com/repos/qqcqqqc/wsdsg_NGS_tools/releases/latest",
                 headers={"User-Agent": "Mozilla/5.0"}
             )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode())
+            with urllib.request.urlopen(req, timeout=8) as response:
+                data = json.loads(response.read().decode("utf-8"))
                 latest_tag = data.get("tag_name", VERSION)
                 QApplication.restoreOverrideCursor()
-                
-                # Normalize versions for comparison
+
                 norm_latest = latest_tag.lstrip("v").strip()
                 norm_current = VERSION.lstrip("v").strip()
-                
+
                 if norm_latest != norm_current:
-                    QMessageBox.information(
+                    ret = QMessageBox.information(
                         self,
                         "发现新版本",
                         f"🎉 发现 GitHub 上的最新发布版本: {latest_tag} (当前版本: {VERSION})！\n\n"
-                        f"已为你打开仓库，请在 Releases 中下载最新安装包。"
+                        f"点击【确定】将打开 GitHub 仓库 Releases 页面下载最新安装包。",
+                        QMessageBox.Ok | QMessageBox.Cancel,
+                        QMessageBox.Ok
                     )
-                    webbrowser.open("https://github.com/qqcqqqc/wsdsg_NGS_tools/releases")
+                    if ret == QMessageBox.Ok:
+                        webbrowser.open("https://github.com/qqcqqqc/wsdsg_NGS_tools/releases")
                 else:
                     QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({VERSION})！")
         except Exception as e:
             QApplication.restoreOverrideCursor()
-            QMessageBox.information(self, "检查软件更新", f"✅ 当前软件已是最新版本 ({VERSION})！\n(开源仓库: https://github.com/qqcqqqc/wsdsg_NGS_tools)")
+            ret = QMessageBox.question(
+                self,
+                "检查软件更新",
+                f"⚠️ 无法连接到 GitHub 检测最新版本 (当前本地版本: {VERSION})。\n"
+                f"原因：国内网络连接 GitHub 异常或超时。\n\n"
+                f"是否打开浏览器访问 Releases 页面手动查看与下载？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if ret == QMessageBox.Yes:
+                webbrowser.open("https://github.com/qqcqqqc/wsdsg_NGS_tools/releases")
 
     def run_env_check_async(self):
         self.lbl_env_status.setText("环境状态: ⏳ 正在后台异步检测运行环境...")
