@@ -487,8 +487,20 @@ def compute_be_overall_editing_metrics(
                 sub_aln = a_seq[st_idx : en_idx + 1]
                 sub_ref = r_seq[st_idx : en_idx + 1]
             else:
-                sub_aln = a_seq
-                sub_ref = r_seq
+                r_no_gap = r_seq.replace('-', '')
+                if sg_clean and sg_clean in r_no_gap:
+                    idx = r_no_gap.find(sg_clean)
+                    pos = 0; st_idx = 0; en_idx = len(r_seq) - 1
+                    for i, c in enumerate(r_seq):
+                        if c != '-':
+                            if pos == idx: st_idx = i
+                            if pos == idx + len(sg_clean) - 1: en_idx = i; break
+                            pos += 1
+                    sub_aln = a_seq[st_idx : en_idx + 1]
+                    sub_ref = r_seq[st_idx : en_idx + 1]
+                else:
+                    sub_aln = a_seq
+                    sub_ref = r_seq
 
             has_indel = ('-' in sub_aln) or ('-' in sub_ref)
             if has_indel:
@@ -733,6 +745,7 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                 sg_start_exact = idx
 
         offset = None
+        run_sg = None
         if info_file and os.path.exists(info_file):
             try:
                 with open(info_file, 'r', encoding='utf-8') as f_inf:
@@ -742,6 +755,10 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                     first_k = list(info_data['results']['refs'].keys())[0]
                     ref_dict = info_data['results']['refs'][first_k]
                 
+                run_sgs = ref_dict.get('sgRNA_sequences', [])
+                if run_sgs:
+                    run_sg = str(run_sgs[0]).strip().upper()
+
                 plot_idxs = ref_dict.get('sgRNA_plot_idxs', [])
                 sg_intervals = ref_dict.get('sgRNA_intervals', [])
                 if plot_idxs:
@@ -758,6 +775,18 @@ def summarize_be_batch(samples: List[Dict[str, str]], output_dir: str, log_callb
                         offset = int(plot_start - sg_start_exact)
             except Exception as e:
                 print(f"Error reading info json offset for {s_name}: {e}")
+
+        if not run_sg and sg_table_file:
+            m_sg = re.search(r'around_sgRNA_([A-Za-z]+)\.txt', os.path.basename(sg_table_file))
+            if m_sg:
+                run_sg = m_sg.group(1).upper()
+
+        if run_sg:
+            if not s_sg or (s_sg.strip().upper() in run_sg and len(s_sg.strip()) < len(run_sg)):
+                s_sg = run_sg
+                sg_len = len(s_sg)
+                if sg_len > max_sg_len:
+                    max_sg_len = sg_len
 
         # Gap-matching fallback if info.json offset is not present
         df_sg = None
